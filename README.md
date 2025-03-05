@@ -22,12 +22,12 @@ Proposed Pipeline with Diagnostics and Remedy
 
 Step 1: Diagnostics
 
-  1.Calculate the weighted UniFrac distance:
+1.Calculate the weighted UniFrac distance:
 
 wu_dist <- phyloseq::distance(physeq, method = "wunifrac")
 wu_matrix <- as.matrix(wu_dist)
 
-  2. Perform diagnostic checks:
+2. Perform diagnostic checks:
 
 wu.check <- Triangle.Check(wu_matrix)
 wu.check$is.metric # Check if the distance matrix is metric
@@ -35,12 +35,12 @@ wu.check$is.metric # Check if the distance matrix is metric
 plot(wu.check$collinearity.score, xlab = "Sample", ylab = "Collinearity Score")
 plot(wu.check$nonlinearity.score, xlab = "Sample", ylab = "Nonlinearity Score")
  
-  3.Convert dissimilarity to Gram matrix and check Euclidean properties:
+3.Convert dissimilarity to Gram matrix and check Euclidean properties:
 
 wu_kernel <- Dissimilarity_to_Gram(wu_matrix)
 wu.euc.check <- Euclidean.Check(wu_kernel) # Check Euclidean properties
 
-   4.Understand the consequences:
+4.Understand the consequences:
 
 wu.pcoa <- pcoa_gower(wu_kernel)
 wu.permanova <- permanova_gower(wu_kernel, metadata)
