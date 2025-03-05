@@ -15,14 +15,15 @@ In this example, we will use the IBD_16s_data_V4.RData dataset to demonstrate th
 Data Cleaning
 
    1.Extract sample data and remove rows with missing or invalid values. 
+   
    2. Create a metadata dataframe.
+      
    3. Prepare the OTU table.
 
 Proposed Pipeline with Diagnostics and Remedy
 
 Step 1: Diagnostics
-
-   1.Calculate the weighted UniFrac distance:
+1.Calculate the weighted UniFrac distance:
 
 wu_dist <- phyloseq::distance(physeq, method = "wunifrac")
 wu_matrix <- as.matrix(wu_dist)
