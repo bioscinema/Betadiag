@@ -22,7 +22,7 @@ Proposed Pipeline with Diagnostics and Remedy
 
 Step 1: Diagnostics
 
-1.Calculate the weighted UniFrac distance:
+   1.Calculate the weighted UniFrac distance:
 
 wu_dist <- phyloseq::distance(physeq, method = "wunifrac")
 wu_matrix <- as.matrix(wu_dist)
