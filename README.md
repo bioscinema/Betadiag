@@ -13,11 +13,13 @@ Walk-Through Example
 In this example, we will use the IBD_16s_data_V4.RData dataset to demonstrate the diagnostic and remedy tools.
 
 Data Cleaning
+
    1.Extract sample data and remove rows with missing or invalid values. 
    2. Create a metadata dataframe.
    3. Prepare the OTU table.
 
 Proposed Pipeline with Diagnostics and Remedy
+
 Step 1: Diagnostics
 
   1.Calculate the weighted UniFrac distance:
