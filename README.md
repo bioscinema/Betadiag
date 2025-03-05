@@ -14,7 +14,7 @@ In this example, we will use the IBD_16s_data_V4.RData dataset to demonstrate th
 
 Data Cleaning
 
-   1.Extract sample data and remove rows with missing or invalid values. .\
+   1.Extract sample data and remove rows with missing or invalid values. 
    
    2. Create a metadata dataframe.
       
