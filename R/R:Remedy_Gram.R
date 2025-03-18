@@ -1,3 +1,12 @@
+#' Remedy Gram Matrix
+#'
+#' This function applies remedial techniques to a Gram matrix.
+#'
+#' @param G A Gram matrix.
+#' @param method The method to use for remedying the Gram matrix. Options are "Higham" or "Tikhonov".
+#' @param epsilon A small positive value to use if the "Tikhonov" method is selected. Default is NULL.
+#' @return A remedied Gram matrix.
+#' @export
 Remedy_Gram <- function(G, method, epsilon = NULL){
   ## input G and implement remedial techniques on it
   ## specify epsilon if use Tikhonov
