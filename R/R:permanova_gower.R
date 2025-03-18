@@ -1,3 +1,12 @@
+#' PERMANOVA with Gram Matrix
+#'
+#' This function performs PERMANOVA (Permutational Multivariate Analysis of Variance) using a Gram matrix and metadata.
+#'
+#' @param G A Gram matrix.
+#' @param metadata A data frame containing metadata for the samples.
+#' @param nperm The number of permutations to perform. Default is 999.
+#' @return A list containing the pseudo-F statistic and the p-value.
+#' @export
 permanova_gower <- function(G, metadata, nperm = 999) {
   n <- nrow(G)
   
