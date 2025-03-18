@@ -1,3 +1,10 @@
+#' Calculate Weighted UniFrac Distance
+#'
+#' This function calculates the weighted UniFrac distance for a given phyloseq object.
+#'
+#' @param physeq A phyloseq object.
+#' @return A dissimilarity matrix representing the weighted UniFrac distances.
+#' @export
 weighted_unifrac_calc <- function(physeq) {
   if (!inherits(physeq, "phyloseq")) {
     stop("Input must be a phyloseq object")
