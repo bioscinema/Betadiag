@@ -1,3 +1,10 @@
+#' Check if Gram Matrix is Euclidean
+#'
+#' This function checks if a given Gram matrix is Euclidean.
+#'
+#' @param G A Gram matrix.
+#' @return A list containing the ratio of negative eigenvalues to the total sum of eigenvalues and a boolean indicating if the matrix is Euclidean.
+#' @export
 Euclidean.Check <- function(G){
   # input Gram matrix
   eig <- eigen(G)
