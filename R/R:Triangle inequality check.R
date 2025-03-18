@@ -1,3 +1,10 @@
+#' Check Triangle Inequality for Dissimilarity Matrix
+#'
+#' This function checks the triangle inequality for a given dissimilarity matrix.
+#'
+#' @param D A dissimilarity matrix.
+#' @return A list containing whether the matrix is metric, the count of negative and zero triangle inequalities, and collinearity and nonlinearity scores.
+#' @export
 Triangle.Check <- function(D){
   # input dissimilarity matrix
   R = ncol(D)
