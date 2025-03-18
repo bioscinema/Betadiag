@@ -1,3 +1,10 @@
+#' Principal Coordinates Analysis (PCoA) with Gram Matrix
+#'
+#' This function performs Principal Coordinates Analysis (PCoA) using a Gram matrix as input.
+#'
+#' @param G A Gram matrix.
+#' @return A list containing eigenvalues, scores, rates for the first two principal coordinates, and a boolean indicating if the matrix is valid.
+#' @export
 pcoa_gower <- function(G) {
   ### PCoA with Gram matrix as input
   eig <- eigen(G, symmetric = TRUE)
