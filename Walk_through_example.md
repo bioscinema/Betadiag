@@ -1,5 +1,5 @@
 ---
-title: "Walkthrough Example"
+title: "Walk through Example"
 author: ""
 date: "`r format(Sys.Date(), '%Y-%m-%d')`"
 output: html_document
