@@ -5,6 +5,9 @@ date: "`r format(Sys.Date(), '%Y-%m-%d')`"
 output: html_document
 ---
 
+In this example, we will use the IBD_16s_data_V4.RData dataset to demonstrate the diagnostic and remedy tools.
+
+
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
@@ -30,6 +33,12 @@ load("IBD_16s_data_V4.RData")
 ```
 
 ## Data Cleaning
+
+   1. Extract sample data and remove rows with missing or invalid values. 
+   
+   2. Create a metadata dataframe.
+      
+   3. Prepare the OTU table.
 
 ```{r data-cleaning}
 sample_data <- sample_data(phy1)
