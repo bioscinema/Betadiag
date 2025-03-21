@@ -60,6 +60,8 @@ metadata <- data.frame(
 
 ### Distance Calculation
 
+Calculate the weighted UniFrac distance:
+
 ```{r distance-calculation}
 otu_table <- otu_table(physeq)
 if (taxa_are_rows(physeq)) {
