@@ -11,8 +11,8 @@ To install the development version of Betadiag from GitHub:
 ```r
 # Install devtools if not already installed
 install.packages("devtools")
-library(devtools)
 devtools::install_github("bioscinema/Betadiag")
+library(devtools)
 ```
 
 ## Key Features
