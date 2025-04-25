@@ -1,0 +1,17 @@
+Package: Betadiag
+Type: Package
+Title: Diagnostics and Remedy Tools for Beta Diversity Analysis
+Version: 0.0.1
+Authors@R: c(
+  person("Zihan", "Zhu", email = "zxz1586@case.edu", role = c("aut", "cre")),
+  person("Yiqian", "Zhang", email = "yiqianz5@illinois.edu", role = "aut"))
+Description: This package provides a suite of tools for diagnosing and addressing issues in beta diversity analysis. It helps assess data quality, identify potential biases, and apply corrections to improve the robustness of diversity comparisons. 
+  Features include diagnostic checks for beta diversity metrics, detection of biases and anomalies, remediation strategies for improving analysis accuracy, and support for various ecological and microbiome datasets. 
+  The package includes functions for converting dissimilarity matrices to Gram matrices, performing Principal Coordinate Analysis (PCoA), conducting PERMANOVA, checking matrix properties, and applying remedies for non-Euclidean behavior.
+License: GPL (>= 2)
+Encoding: UTF-8
+LazyData: true
+Imports:
+    stats,
+    phyloseq
+RoxygenNote: 7.3.2

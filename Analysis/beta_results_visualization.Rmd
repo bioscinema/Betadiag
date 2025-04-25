@@ -1,0 +1,509 @@
+---
+title: "beta_results_visualization"
+author: "Yiqian Zhang"
+date: "2025-03-12"
+output: html_document
+---
+
+```{r}
+# Load necessary libraries
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+
+# Read data
+A <- read.csv("baseline_filtered_data.csv",
+              stringsAsFactors = FALSE)
+B <- read.csv("higham_filtered_result.csv",
+              stringsAsFactors = FALSE)
+B2 <- read.csv("tikhonov_filtered_result.csv",
+              stringsAsFactors = FALSE)
+
+# Convert 'PcoaNegFrac' to numeric and filter A
+A$PcoaNegFrac <- as.numeric(gsub("%", "", A$PcoaNegFrac)) / 100  # Remove "%" and convert to fraction
+A_filtered <- A %>% 
+  filter(PcoaNegFrac > 0)  # Keep rows where PcoaNegFrac > 0
+
+# Join B (Higham remedial) to A_filtered (left join)
+A_B_merged <- left_join(A_filtered, B, by = c("source", "Dissimilarity")) %>%
+  drop_na()  # Ensure correct join keys
+
+# Join B2 (Tikhonov remedial) to A_filtered (left join)
+A_B2_merged <- left_join(A_filtered, B2, by = c("source", "Dissimilarity")) %>%
+  drop_na()
+
+# Ensure 'pseudo_F' columns exist
+if (!("pseudo_F.x" %in% colnames(A_B_merged)) | !("pseudo_F.y" %in% colnames(A_B_merged))) {
+  stop("The variable 'pseudo_F' is not present in one or both tables (A and B).")
+}
+
+if (!("pseudo_F.x" %in% colnames(A_B2_merged)) | !("pseudo_F.y" %in% colnames(A_B2_merged))) {
+  stop("The variable 'pseudo_F' is not present in one or both tables (A and B2).")
+}
+
+# ----------------------
+# 1) Higham Remedial
+# ----------------------
+# Remove the two largest values from pseudo_F.x and pseudo_F.y
+A_B_filtered <- A_B_merged %>%
+  arrange(desc(pseudo_F.x)) %>%      # Sort by descending pseudo_F.x
+  slice(-c(1, 2)) %>%                # Remove the top 2 values
+  arrange(desc(pseudo_F.y)) %>%      # Sort by descending pseudo_F.y
+  slice(-c(1, 2))                    # Remove the top 2 values
+
+x_higham <- A_B_filtered$pseudo_F.x  # Data without remedial (x)
+y_higham <- A_B_filtered$pseudo_F.y  # Data with Higham remedial (y)
+
+# Fit linear regression (no intercept)
+fit_higham <- lm(y_higham ~ x_higham - 1)
+r2_higham  <- summary(fit_higham)$r.squared
+slope_higham <- coef(fit_higham)[1]
+
+# ----------------------
+# 2) Tikhonov Remedial
+# ----------------------
+# Remove the two largest values from pseudo_F.x and pseudo_F.y in the Tikhonov-merged data
+A_B2_filtered <- A_B2_merged %>%
+  arrange(desc(pseudo_F.x)) %>%
+  slice(-c(1, 2)) %>%
+  arrange(desc(pseudo_F.y)) %>%
+  slice(-c(1, 2))
+
+x_tikhonov <- A_B2_filtered$pseudo_F.x  # Same x as above (no remedial)
+y_tikhonov <- A_B2_filtered$pseudo_F.y  # Data with Tikhonov remedial
+
+# Fit linear regression (no intercept)
+fit_tikhonov <- lm(y_tikhonov ~ x_tikhonov - 1)
+r2_tikhonov  <- summary(fit_tikhonov)$r.squared
+slope_tikhonov <- coef(fit_tikhonov)[1]
+
+# ----------------------
+# Plot
+# ----------------------
+# We will plot two sets of points: (x_higham, y_higham) in blue, (x_tikhonov, y_tikhonov) in green.
+# Then we add two regression lines and two separate annotations.
+
+# Prepare data frames for ggplot
+df_higham <- data.frame(
+  x    = x_higham,
+  y    = y_higham,
+  group = "Higham"
+)
+
+df_tikhonov <- data.frame(
+  x    = x_tikhonov,
+  y    = y_tikhonov,
+  group = "Tikhonov"
+)
+
+p <- ggplot() +
+  # Scatter: Higham (blue)
+  geom_point(data = df_higham, aes(x = x, y = y), color = "#2fb4af") +
+  # Scatter: Tikhonov (green)
+  geom_point(data = df_tikhonov, aes(x = x, y = y), color = "#59187e") +
+  
+  # Reference line: x = y
+  geom_abline(slope = 1, intercept = 0, color = "#f84914", linetype = "dashed", size = 1) +
+  
+  # Regression line: Higham
+  geom_smooth(data = df_higham, aes(x = x, y = y),
+              formula = y ~ x - 1, method = "lm", se = FALSE, color = "#2fb4af") +
+  # Regression line: Tikhonov
+  geom_smooth(data = df_tikhonov, aes(x = x, y = y),
+              formula = y ~ x - 1, method = "lm", se = FALSE, color = "#59187e") +
+  
+  # Annotation for Higham
+   annotate(
+  "text",
+  x = min(df_higham$x) + 0.1 * diff(range(df_higham$x)),
+  y = max(df_higham$y) - 0.1 * diff(range(df_higham$y)),
+  label = bquote(
+    atop(
+      bold("Higham:"),
+      atop(
+        bold(R^2 ~ "=" ~ .(format(r2_higham, digits = 3))),
+        bold("Slope =" ~ .(format(slope_higham, digits = 3)))
+      )
+    )
+  ),
+  size = 6,    # increase to make the text larger
+  color = "#2fb4af"
+) +
+  
+annotate(
+  "text",
+  x = min(df_tikhonov$x) + 0.35 * diff(range(df_tikhonov$x)),
+  y = max(df_higham$y) - 0.1 * diff(range(df_higham$y)),  
+  label = bquote(
+    atop(
+      bold("Tikhonov:"),
+      atop(
+        bold(R^2 ~ "=" ~ .(format(r2_tikhonov, digits = 3))),
+        bold("Slope =" ~ .(format(slope_tikhonov, digits = 3)))
+      )
+    )
+  ),
+  size = 6,    # same size for consistency
+  color = "#59187e"
+)+
+  
+  labs(
+    x = expression(bold("Pseudo F (No Remedial)")),
+    y = expression(bold("Pseudo F (Remedial)")),
+    title = expression(
+      bold("Comparison of Pseudo F Between No Remedial,\nHigham Remedial, and Tikhonov Remedial")
+    )
+  ) +
+  theme_classic() +
+  theme(
+    # Axis titles
+    axis.title.x = element_text(size = 14), 
+    axis.title.y = element_text(size = 14),
+    panel.grid.major = element_line(color = "grey70"),  # or "black", etc.
+    panel.grid.minor = element_blank(), 
+    # Plot title
+    plot.title = element_text(size = 16),
+    plot.margin = margin(t = 20, r = 20, b = 20, l = 20),
+    axis.text.x  = element_text(size = 12),
+    axis.text.y  = element_text(size = 12)
+  )
+p
+ggsave(
+  filename = "RemedialPseudoF.eps",
+  plot = p,
+  device = "eps",
+  width = 7,
+  height = 5
+)
+```
+
+```{r}
+# Load necessary libraries
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+
+# -------------------------
+# 1) Read/Prep the data
+# -------------------------
+A <- read.csv("baseline_filtered_data.csv",
+              stringsAsFactors = FALSE)
+B <- read.csv("higham_filtered_result.csv",
+              stringsAsFactors = FALSE)
+C <- read.csv("tikhonov_filtered_result.csv",
+              stringsAsFactors = FALSE)
+
+# Convert 'PcoaNegFrac' to numeric in A and filter
+A$PcoaNegFrac <- as.numeric(gsub("%", "", A$PcoaNegFrac)) / 100
+A_filtered <- A %>%
+  filter(PcoaNegFrac > 0)   # Keep rows where PcoaNegFrac > 0
+
+# Merge Higham data (B) with A_filtered
+A_B_merged <- left_join(A_filtered, B, by = c("source", "Dissimilarity")) %>%
+  drop_na(MiRKAT_Rsquared.x, MiRKAT_Rsquared.y)  # remove rows with NA in columns
+
+# Merge Tikhonov data (C) with A_filtered
+A_C_merged <- left_join(A_filtered, C, by = c("source", "Dissimilarity")) %>%
+  drop_na(MiRKAT_Rsquared.x, MiRKAT_Rsquared.y)
+
+# Safety check for necessary columns in each merged dataset
+if (!all(c("MiRKAT_Rsquared.x", "MiRKAT_Rsquared.y") %in% names(A_B_merged))) {
+  stop("The variable 'MiRKAT_Rsquared.x' or 'MiRKAT_Rsquared.y' is missing in Higham merged data.")
+}
+if (!all(c("MiRKAT_Rsquared.x", "MiRKAT_Rsquared.y") %in% names(A_C_merged))) {
+  stop("The variable 'MiRKAT_Rsquared.x' or 'MiRKAT_Rsquared.y' is missing in Tikhonov merged data.")
+}
+
+# -------------------------
+# 2) Filter out large values
+#    (similar process for both Higham and Tikhonov)
+# -------------------------
+
+# Higham dataset
+A_B_filtered <- A_B_merged %>%
+  arrange(desc(MiRKAT_Rsquared.x)) %>% 
+  slice(-c(1, 2)) %>% 
+  arrange(desc(MiRKAT_Rsquared.y)) %>% 
+  slice(-c(1, 2))
+
+# Tikhonov dataset
+A_C_filtered <- A_C_merged %>%
+  arrange(desc(MiRKAT_Rsquared.x)) %>% 
+  slice(-c(1, 2)) %>% 
+  arrange(desc(MiRKAT_Rsquared.y)) %>% 
+  slice(-c(1, 2))
+
+# -------------------------
+# 3) Extract x and y for both sets and fit linear models
+# -------------------------
+# Higham:
+x_higham <- A_B_filtered$MiRKAT_Rsquared.x  # (No Remedial)
+y_higham <- A_B_filtered$MiRKAT_Rsquared.y  # (Higham Remedial)
+
+# Tikhonov:
+x_tikhonov <- A_C_filtered$MiRKAT_Rsquared.x  # (No Remedial)
+y_tikhonov <- A_C_filtered$MiRKAT_Rsquared.y  # (Tikhonov Remedial)
+
+# -------------------------
+# 4) Linear regression (no intercept) for each remedial method
+# -------------------------
+fit_higham    <- lm(y_higham ~ x_higham - 1)
+fit_tikhonov  <- lm(y_tikhonov ~ x_tikhonov - 1)
+
+r2_higham     <- summary(fit_higham)$r.squared
+slope_higham  <- coef(fit_higham)[1]
+
+r2_tikhonov   <- summary(fit_tikhonov)$r.squared
+slope_tikhonov<- coef(fit_tikhonov)[1]
+
+# -------------------------
+# 5) Plot everything
+# -------------------------
+# Prepare data frames for ggplot
+df_higham <- data.frame(
+  x = x_higham,
+  y = y_higham,
+  group = "Higham"
+)
+
+df_tikhonov <- data.frame(
+  x = x_tikhonov,
+  y = y_tikhonov,
+  group = "Tikhonov"
+)
+
+ggplot() +
+  # Scatter: Higham in blue
+  geom_point(data = df_higham, aes(x = x, y = y), color = "blue") +
+  # Scatter: Tikhonov in green
+  geom_point(data = df_tikhonov, aes(x = x, y = y), color = "green") +
+  
+  # Reference line: x = y
+  geom_abline(slope = 1, intercept = 0, 
+              color = "red", linetype = "dashed", size = 1) +
+  
+  # Regression line: Higham
+  geom_smooth(data = df_higham, aes(x = x, y = y),
+              formula = y ~ x - 1, method = "lm",
+              se = FALSE, color = "blue") +
+  # Regression line: Tikhonov
+  geom_smooth(data = df_tikhonov, aes(x = x, y = y),
+              formula = y ~ x - 1, method = "lm",
+              se = FALSE, color = "green") +
+  
+  # Annotation for Higham
+  annotate("text",
+           x = min(df_higham$x) + 0.1 * diff(range(df_higham$x)),
+           y = max(df_higham$y) - 0.1 * diff(range(df_higham$y)),
+           label = sprintf("Higham:\nR^2=%.3f\nSlope=%.3f", r2_higham, slope_higham),
+           size = 5, color = "blue") +
+  
+  # Annotation for Tikhonov
+  annotate("text",
+           x = min(df_tikhonov$x) + 0.1 * diff(range(df_tikhonov$x)),
+           y = max(df_tikhonov$y) - 0.1 * diff(range(df_tikhonov$y)),
+           label = sprintf("Tikhonov:\nR^2=%.3f\nSlope=%.3f", r2_tikhonov, slope_tikhonov),
+           size = 5, color = "green") +
+  
+  labs(x = "MiRKAT_Rsquared (No Remedial)",
+       y = "MiRKAT_Rsquared (Remedial)",
+       title = "Comparison of MiRKAT_Rsquared:\nNo Remedial vs Higham vs Tikhonov") +
+  theme_minimal()
+
+```
+
+```{r}
+library(dplyr)
+
+# -----------------------------
+# 1) Read in the three datasets
+# -----------------------------
+A <- read.csv("baseline_filtered_data.csv",
+              stringsAsFactors = FALSE)
+B <- read.csv("higham_filtered_result.csv",
+              stringsAsFactors = FALSE)
+C <- read.csv("tikhonov_filtered_result.csv",
+              stringsAsFactors = FALSE)
+
+# -----------------------------
+# 2) Convert/Filter
+# -----------------------------
+# Convert 'PcoaNegFrac' to numeric in A, then filter
+A$PcoaNegFrac <- as.numeric(gsub("%", "", A$PcoaNegFrac)) / 100
+A_filtered <- A %>%
+  filter(PcoaNegFrac > 0)  # Keep rows where PcoaNegFrac > 0
+
+# -----------------------------
+# 3) Merge (left join) for each remedial method
+# -----------------------------
+# Higham
+A_B_merged <- left_join(A_filtered, B, by = c("source", "Dissimilarity")) %>%
+  drop_na(MiRKAT_Rsquared.x, MiRKAT_Rsquared.y)
+
+# Tikhonov
+A_C_merged <- left_join(A_filtered, C, by = c("source", "Dissimilarity")) %>%
+  drop_na(MiRKAT_Rsquared.x, MiRKAT_Rsquared.y)
+
+# -----------------------------
+# 4) (Optional) Remove top 2 largest values if you still want that step
+#    (Comment out if you prefer not to remove them)
+# -----------------------------
+A_B_filtered <- A_B_merged %>%
+  arrange(desc(MiRKAT_Rsquared.x)) %>%
+  slice(-c(1, 2)) %>%
+  arrange(desc(MiRKAT_Rsquared.y)) %>%
+  slice(-c(1, 2))
+
+A_C_filtered <- A_C_merged %>%
+  arrange(desc(MiRKAT_Rsquared.x)) %>%
+  slice(-c(1, 2)) %>%
+  arrange(desc(MiRKAT_Rsquared.y)) %>%
+  slice(-c(1, 2))
+
+# -----------------------------
+# 5) Compute relative change by source:
+#    (remedial - non_remedial) / non_remedial
+# -----------------------------
+# Higham
+df_higham <- A_B_filtered %>%
+  # Exclude cases where NonRemedial (MiRKAT_Rsquared.x) is 0 to avoid division by zero
+  filter(MiRKAT_Rsquared.x != 0) %>%
+  mutate(rel_change_higham = (MiRKAT_Rsquared.y - MiRKAT_Rsquared.x) / MiRKAT_Rsquared.x) %>%
+  group_by(source) %>%
+  summarise(
+    mean_rel_change_higham   = mean(rel_change_higham, na.rm = TRUE),
+    median_rel_change_higham = median(rel_change_higham, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# Tikhonov
+df_tikhonov <- A_C_filtered %>%
+  filter(MiRKAT_Rsquared.x != 0) %>%
+  mutate(rel_change_tikhonov = (MiRKAT_Rsquared.y - MiRKAT_Rsquared.x) / MiRKAT_Rsquared.x) %>%
+  group_by(source) %>%
+  summarise(
+    mean_rel_change_tikhonov   = mean(rel_change_tikhonov, na.rm = TRUE),
+    median_rel_change_tikhonov = median(rel_change_tikhonov, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# -----------------------------
+# 6) Join Higham and Tikhonov summary tables
+# -----------------------------
+df_combined <- full_join(df_higham, df_tikhonov, by = "source")
+
+# Take a look at the final table
+print(df_combined)
+
+```
+
+```{r}
+library(dplyr)
+
+# Suppose A_B_filtered is your merged+filtered Higham dataset
+# and A_C_filtered is your merged+filtered Tikhonov dataset.
+# Each has columns: 
+#   - MiRKAT_Rsquared.x (No Remedial) 
+#   - MiRKAT_Rsquared.y (Remedial)
+
+# 1) Compute the relative change for Higham:
+df_higham <- A_B_filtered %>%
+  filter(MiRKAT_Rsquared.x != 0) %>%  # avoid division by zero
+  mutate(
+    rel_change_higham = (MiRKAT_Rsquared.y - MiRKAT_Rsquared.x) / MiRKAT_Rsquared.x
+  )
+
+# Then just take the overall mean (and median if you want):
+mean_rel_change_higham   <- mean(df_higham$rel_change_higham, na.rm = TRUE)
+median_rel_change_higham <- median(df_higham$rel_change_higham, na.rm = TRUE)
+
+# 2) Compute the relative change for Tikhonov:
+df_tikhonov <- A_C_filtered %>%
+  filter(MiRKAT_Rsquared.x != 0) %>%
+  mutate(
+    rel_change_tikhonov = (MiRKAT_Rsquared.y - MiRKAT_Rsquared.x) / MiRKAT_Rsquared.x
+  )
+
+mean_rel_change_tikhonov   <- mean(df_tikhonov$rel_change_tikhonov, na.rm = TRUE)
+median_rel_change_tikhonov <- median(df_tikhonov$rel_change_tikhonov, na.rm = TRUE)
+
+cat("Higham mean:   ", mean_rel_change_higham, "\n")
+cat("Higham median: ", median_rel_change_higham, "\n\n")
+
+cat("Tikhonov mean:   ", mean_rel_change_tikhonov, "\n")
+cat("Tikhonov median: ", median_rel_change_tikhonov, "\n")
+
+```
+
+```{r}
+library(dplyr)
+
+#------------------------------------------------------------------
+# 1) Read original datasets: A = no remedial, B = Higham, C = Tikhonov
+#------------------------------------------------------------------
+A <- read.csv("baseline_filtered_data.csv",
+              stringsAsFactors = FALSE)
+B <- read.csv("higham_filtered_result.csv",
+              stringsAsFactors = FALSE)
+C <- read.csv("tikhonov_filtered_result.csv",
+              stringsAsFactors = FALSE)
+
+#------------------------------------------------------------------
+# 2) Rename columns so each dataset has distinct pseudo_F, pseudo_R2,
+#    and MiRKAT_Rsquared. Adjust names below to match your actual columns.
+#------------------------------------------------------------------
+A2 <- A %>%
+  rename(
+    pseudo_F_noRemedial         = pseudo_F,
+    pseudo_R2_noRemedial        = pseudo_R2,
+    MiRKAT_Rsquared_noRemedial  = MiRKAT_Rsquared
+  )
+
+B2 <- B %>%
+  rename(
+    pseudo_F_higham         = pseudo_F,
+    pseudo_R2_higham        = pseudo_R2,
+    MiRKAT_Rsquared_higham  = MiRKAT_Rsquared
+  )
+
+C2 <- C %>%
+  rename(
+    pseudo_F_tikhonov         = pseudo_F,
+    pseudo_R2_tikhonov        = pseudo_R2,
+    MiRKAT_Rsquared_tikhonov  = MiRKAT_Rsquared
+  )
+
+#------------------------------------------------------------------
+# 3) Merge all three datasets on (source, Dissimilarity).
+#    Then optionally filter out rows if you want to remove NAs, etc.
+#------------------------------------------------------------------
+ABC_merged <- A2 %>%
+  left_join(B2, by = c("source", "Dissimilarity")) %>%
+  left_join(C2, by = c("source", "Dissimilarity")) %>%
+  # Example filter: remove any rows missing essential columns
+  filter(
+    !is.na(pseudo_F_noRemedial),
+    !is.na(pseudo_F_higham),
+    !is.na(pseudo_F_tikhonov)
+  )
+
+#------------------------------------------------------------------
+# 4) Select only the columns you want in the final table
+#------------------------------------------------------------------
+final_table <- ABC_merged %>%
+  select(
+    source,
+    Dissimilarity,
+    pseudo_F_noRemedial,    pseudo_R2_noRemedial,    MiRKAT_Rsquared_noRemedial,
+    pseudo_F_higham,        pseudo_R2_higham,        MiRKAT_Rsquared_higham,
+    pseudo_F_tikhonov,      pseudo_R2_tikhonov,      MiRKAT_Rsquared_tikhonov
+  )
+
+# Print or save the final table
+print(final_table)
+
+# If you want to write out a CSV:
+ write.csv(final_table, "final_tabl_Remedialornot.csv", row.names = FALSE)
+
+```
+

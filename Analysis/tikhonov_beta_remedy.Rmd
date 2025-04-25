@@ -1,0 +1,1404 @@
+---
+title: "PERMANOVA"
+author: "Yiqian Zhang"
+date: "2025-01-18"
+output: html_document
+---
+
+# Sourse necessary r functions
+
+```{r}
+Triangle.Check <- function(D){
+
+  R = ncol(D)
+  neg.counter = 0
+  zero.counter = 0
+  collinearity.score = rep(0,R)
+  
+  for (p in 1:R) {
+    for (q in 1:R){
+      if(q!=p){
+        r = seq(1,R)[-c(p,q)]
+        numN = sum(D[p,q] + D[q,r] - D[p,r]<0)
+        num0 = sum(D[p,q] + D[q,r] - D[p,r]==0)
+        neg.counter = neg.counter + numN/(R*(R-1)*(R-2))
+        zero.counter = zero.counter + num0/(R*(R-1)*(R-2))
+        collinearity.score[p] = collinearity.score[p] + (numN + num0)/(R*(R-1)*(R-2))
+      }
+    }
+  }
+  
+  return(list(is.metric = ifelse(neg.counter>0,0,1), 
+              neg.counter = neg.counter,
+              zero.counter = zero.counter,
+              collinearity.score = collinearity.score))
+}
+
+Dissimilarity_to_Gram <- function(D){
+  # convert dissimilarity matrix to Gram matrix
+  R = ncol(D)
+  J = diag(R) - (matrix(1,R,1) %*% matrix(1,1,R))/R
+  Gram = -0.5 * J %*% D^2 %*% J
+  return(Gram)
+}
+
+pcoa_gower <- function(G) {
+  ### PCoA with Gram matrix as input
+  eig <- eigen(G, symmetric = TRUE)
+  values <- eig$values
+  small.values = which(abs(values)<1e-16)
+  values[small.values] = 0
+  vectors <- eig$vectors
+  pos_index <- values > 0
+  positive_values <- values[pos_index]
+  positive_vectors <- vectors[, pos_index, drop = FALSE]
+  scores <- positive_vectors %*% diag(sqrt(positive_values))
+  is_valid <- all(values >= 0)
+  
+  PCo1.rate = abs(values)[1]/sum(abs(values)[values>0])
+  PCo2.rate = abs(values)[2]/sum(abs(values)[values>0])
+  return(list(
+    eigenvalues = values,
+    scores = scores,
+    PCo1.rate = PCo1.rate,
+    PCo2.rate = PCo2.rate,
+    is.valid = is_valid
+  ))
+}
+
+permanova_gower <- function(G, metadata, nperm = 999) {
+  n <- nrow(G)
+  
+  eig = eigen(G)
+  values <- eig$values
+  small.values = which(abs(values)<1e-16)
+  values[small.values] = 0
+  is.valid = all(values>=0)
+  
+  Gd = eig$vectors %*% diag(abs(values)) %*% t(eig$vectors)
+  Gn = eig$vectors[,values>0] %*% diag(values[values>0]) %*% t(eig$vectors[,values>0])
+  
+  X <- model.matrix(~ ., data = metadata)
+  H <- X %*% solve(t(X) %*% X) %*% t(X)  
+  G_H <- H %*% Gn %*% H  
+  SS_model <- sum(diag(G_H))  
+  
+  I_H <- diag(n) - H  
+  G_res <- I_H %*% Gd %*% I_H  
+  SS_residual <- sum(diag(G_res)) 
+  
+  df_model <- ncol(X) - 1
+  df_residual <- n - ncol(X)
+  
+  pseudo_F <- (SS_model / df_model) / (SS_residual / df_residual) 
+  
+  pseudo_R2 = SS_model/(SS_model + SS_residual)
+  
+  TCov = sqrt(sum(diag( H %*% G %*% H  )))
+  
+  perm_F <- numeric(nperm)
+  for (i in 1:nperm) {
+    perm_index <- sample(1:n) 
+    G_perm <- G[perm_index, perm_index]  
+    G_H_perm <- H %*% G_perm %*% H  
+    SS_model_perm <- sum(diag(G_H_perm))
+    
+    G_res_perm <- I_H %*% G_perm %*% I_H  
+    SS_residual_perm <- sum(diag(G_res_perm))
+    
+    perm_F[i] <- (SS_model_perm / df_model) / (SS_residual_perm / df_residual)
+  }
+  
+  p_value <- mean(perm_F >= pseudo_F)
+  
+  return(list(
+    Covcoeff = TCov,
+    pseudo_F = pseudo_F,
+    pseudo_R2 = pseudo_R2,
+    p_value = p_value,
+    is.valid = is.valid
+  ))
+}
+
+MiRKAT_R <- function(G,Y,metadata){
+  n <- nrow(G)
+  X <- model.matrix(~ ., data = metadata)
+  Y <- model.matrix(~ ., data = Y)
+  H <- X %*% solve(t(X) %*% X) %*% t(X)  
+  I_H <- diag(n) - H  
+  R <- I_H %*% Y
+  TCov = sqrt(sum(diag((t(R) %*% G %*% R))))
+  Rsquared <- sum(diag((t(R) %*% G %*% R)))/(sum(diag(G))*sum(diag(t(R) %*% R)))
+  return(list(Rsquared = Rsquared, Covcoeff = TCov))
+}
+
+Remedy_Gram <- function(G, method, epsilon = NULL){
+  ## input G and implement remedial techniques on it
+  ## specify epsilon if use Tikhonov
+  if(method == "Higham"){
+    ### Nearest PSD projection
+    eig <- eigen(G)
+    lambda <- eig$values  
+    lambda0 <- pmax(lambda, 0)
+    G_rem <- eig$vectors %*% diag(lambda0) %*% t(eig$vectors)
+  }
+  
+  if(method == "Tikhonov"){
+    ### Relaxed Positive Definiteness
+    eig <- eigen(G)
+    lambda <- eig$values  
+    lambda[abs(lambda)<1e-16] = 0
+    lambda.min = min(lambda)
+    if(lambda.min==0){
+      lambda0 = lambda + epsilon
+    }
+    if(lambda.min<0){
+      lambda0 = lambda + abs(lambda.min) + epsilon
+    }
+    G_rem <- eig$vectors %*% diag(lambda0) %*% t(eig$vectors)
+  }
+  
+  return(G_rem)
+}
+```
+
+
+# Covid_gut(14812).RData
+```{r}
+library(MiRKAT)
+library(MiRKATMC)
+library(phyloseq)
+library(ape)
+library(GUniFrac)
+gower_centering <- function(distance) {
+  # Ensure the input is a valid distance object or matrix
+  if (inherits(distance, "dist")) {
+    D <- as.matrix(distance) # Convert dist object to a matrix
+  } else if (is.matrix(distance)) {
+    D <- distance
+  } else {
+    stop("Input must be a distance object or a matrix.")
+  }
+  
+  # Number of samples
+  n <- nrow(D)
+  
+  # Double centering
+  # Compute row and column means
+  row_means <- rowMeans(D)
+  col_means <- colMeans(D)
+  total_mean <- mean(D)
+  
+  # Apply the Gower centering formula
+  G <- -0.5 * (D - row_means - col_means + total_mean)
+  
+  return(G)
+}
+## Load data
+load("~/Library/CloudStorage/Box-Box/WenhaoLi@MDA/BetaDiversity/real data/Covid_gut/Covid_gut(14812).RData")
+sample_data <- sample_data(ps)
+rows_with_na <- apply(sample_data[, c(5, 6, 1, 20, 18, 42)], 1, function(x) any(x == "NA"))
+physeq <- prune_samples(!rows_with_na, ps)
+## Prepare OTU table
+otu_table <- otu_table(physeq)
+if (taxa_are_rows(physeq)) {
+  otu_table <- t(otu_table)
+}
+
+## Calculate dissimilarities for all specified methods
+distance_methods <- c(
+  "manhattan", "euclidean", "canberra", "clark", "bray", "kulczynski", 
+  "jaccard", "gower", "altGower", "morisita", "horn", "mountford", 
+  "raup", "binomial", "chao", "cao", "mahalanobis", "chisq", 
+  "chord", "hellinger", "aitchison", "robust.aitchison", "unifrac_unweighted", "unifrac_weighted_phyloseq", "unifrac_weighted_gunifrac"
+)
+
+# Store distances in a list
+distance_matrices <- list()
+
+for (method in distance_methods) {
+  if(method == "aitchison"){
+    distance_matrices[[method]] <- tryCatch(
+      vegan::vegdist(otu_table, method = method, pseudocount = 0.5),
+      error = function(e) {
+        message(paste("Error in method:", method, ":", e$message))
+        NULL
+      }
+    )
+  } else if (method == "unifrac_unweighted") {
+    distance_matrices[[method]] <-(phyloseq::distance(physeq, method = "unifrac", weighted = FALSE))
+  } else if (method == "unifrac_weighted_phyloseq") {
+    distance_matrices[[method]] <-(phyloseq::distance(physeq, method = "unifrac", weighted = TRUE))
+  } else if (method == "unifrac_weighted_gunifrac"){
+    otu_mat <- as(t(otu_table(physeq)), "matrix")  # Convert OTU table to matrix
+    tree <- phy_tree(physeq)  # Extract phylogenetic tree
+    unifrac_weight = GUniFrac(otu_mat, tree, alpha = c(0, 0.5, 1))$unifracs
+    #unifrac_matrix <- do.call(rbind, unifrac_weight)
+
+  # Ensure the matrix is numeric
+    #unifrac_matrix <- apply(unifrac_matrix, 2, as.numeric)
+    unifrac_weight = unifrac_weight[, , "d_1"]
+    # Compute UniFrac distances using GUniFrac
+    distance_matrices[[method]] <-(unifrac_weight)
+
+  }  else {
+      distance_matrices[[method]] <- tryCatch(
+      vegan::vegdist(otu_table, method = method),
+      error = function(e) {
+        message(paste("Error in method:", method, ":", e$message))
+        NULL
+      }
+    )
+  }
+  
+}
+
+## Prepare metadata
+metadata <- data.frame(
+  covid = as.factor(ps@sam_data$covid_positive),
+  treatment = ifelse(ps@sam_data$covid_treatment == "none",0,1),
+  antibiotic = ifelse(ps@sam_data$antibiotic_last_6_month == "none",0,1),
+  age = ps@sam_data$host_age,
+  ethnicity = ifelse(ps@sam_data$ethnicity %in% c("Hispanic","hispanic"), 1,0),
+  sex = ifelse(ps@sam_data$sex == "male",1,0)
+)
+
+## PERMANOVA for each distance method
+Triangle_inequality_covid <- list()
+pcoa_frac_covid <- list()
+adonis_results_all_covid <- list()
+MiRKAT_covid <- list()
+for (method in names(distance_matrices)) {
+  print(method)
+  dist_matrix <- as.matrix(distance_matrices[[method]])
+  dist_gram = Dissimilarity_to_Gram(dist_matrix)
+  dist_gram = Remedy_Gram(dist_gram, "Tikhonov")
+  if (!is.null(dist_matrix)) {
+    Triangle_inequality_covid[[method]] <- (Triangle.Check(as.matrix(dist_matrix)))
+    pcoa_result <- pcoa_gower(dist_gram)
+
+    # Extract eigenvalues
+    eigenvalues <- pcoa_result$eigenvalues
+    
+    # Compute the fraction of negative eigenvalues
+    negative_fraction <- abs(sum(eigenvalues[eigenvalues < 0])) / sum(abs(eigenvalues)) * 100
+    pcoa_frac_covid[[method]] <- negative_fraction
+    # PERMANOVA for all metadata
+    
+    adonis_results_all_covid[[method]] <- permanova_gower(dist_gram, metadata)
+
+    MiRKAT_covid[[method]] <- MiRKAT_R(dist_gram,as.data.frame(metadata[,1]),metadata[,-1])
+  }
+}
+Triangle_inequality_covid
+pcoa_frac_covid
+adonis_results_all_covid
+MiRKAT_covid
+
+
+```
+
+```{r}
+# Initialize an empty data frame
+results_table <- data.frame(
+  Dissimilarity = character(),
+  IsMetric = character(),
+  NegCounter = numeric(),
+  ZeroCounter = numeric(),
+  PcoaNegFrac = character(),
+  
+  pseudo_F = numeric(),
+  pseudo_R2 = numeric(),
+  p_value = numeric(),
+  MiRKAT_Rsquared = numeric(),
+  
+  stringsAsFactors = FALSE
+)
+
+# List of dissimilarities
+methods <- names(Triangle_inequality_covid)
+
+# Loop through each method and extract values
+for (method in methods) {
+  is_metric <- if (!is.null(Triangle_inequality_covid[[method]]$is.metric)) 
+    ifelse(Triangle_inequality_covid[[method]]$is.metric == 1, "YES", "NO") else NA
+  neg_counter <- if (!is.null(Triangle_inequality_covid[[method]]$neg.counter)) Triangle_inequality_covid[[method]]$neg.counter else NA
+  zero_counter <- if (!is.null(Triangle_inequality_covid[[method]]$zero.counter)) Triangle_inequality_covid[[method]]$zero.counter else NA
+  pcoa_neg_frac = paste0(pcoa_frac_covid[[method]],"%")
+  # Extract Adonis2 values (default to NA if not present)
+  
+  pseudo_F = adonis_results_all_covid[[method]]$pseudo_F
+  pseudo_R2 = adonis_results_all_covid[[method]]$pseudo_R2
+  p_value = adonis_results_all_covid[[method]]$p_value
+  MiRKAT_Rsquared = MiRKAT_covid[[method]]
+  
+
+  
+  # Append to results table
+  results_table <- rbind(results_table, data.frame(
+    Dissimilarity = as.character(method),
+    IsMetric = as.character(is_metric),
+    NegCounter = as.numeric(neg_counter),
+    ZeroCounter = as.numeric(zero_counter),
+    PcoaNegFrac = as.character(pcoa_neg_frac),
+    
+    pseudo_F = as.numeric(pseudo_F),
+    pseudo_R2 = as.numeric(pseudo_R2),
+    p_value = as.numeric(p_value),
+    MiRKAT_Rsquared = as.numeric(MiRKAT_Rsquared),
+    
+    stringsAsFactors = FALSE
+  ))
+}
+
+# Display the results table
+print(results_table)
+write.csv(results_table, "Tikhonov_results_table_covid.csv", row.names = TRUE)
+```
+
+
+# cardiovascular_wgs.RData
+```{r}
+load("~/Library/CloudStorage/Box-Box/WenhaoLi@MDA/BetaDiversity/real data/cardiovascular/cardiovascular_wgs.RData")
+
+sample_data <- sample_data(ps)
+rows_with_na <- apply(sample_data[, 12:26], 1, function(x) any(x == "NA"))
+physeq <- prune_samples(!rows_with_na, ps)
+
+# Prepare metadata
+metadata <- data.frame(
+  ## variable of interest
+  HbA1c = as.numeric(physeq@sam_data$HbA1c....),
+  
+  ## clinical variables
+  BMI = as.numeric(physeq@sam_data$BMI..kg.m..),
+  Waist = as.numeric(physeq@sam_data$Waist.circumference..cm.),
+  Diabetic = ifelse(physeq@sam_data$Diabetic.status == "No",0,1),
+  FP_CPR = as.numeric(physeq@sam_data$Fasting.plasma.CRP..mg.L.),
+  FP_adipo = as.numeric(physeq@sam_data$Fasting.plasma.adiponectin..mg.L.),
+  FP_proA = as.numeric(physeq@sam_data$Fasting.plasma.pro.ANP..pmol.L.),
+  FP_trig = as.numeric(physeq@sam_data$Fasting.plasma.triglycerides..mmol.L.),
+  SBP = as.numeric(physeq@sam_data$Systolic.blood.pressure..mmHg.),
+  DBP = as.numeric(physeq@sam_data$Diastolic.blood.pressure..mmHg.),
+  LVEF = as.numeric(physeq@sam_data$Left.ventricular.ejection.fraction....),
+  
+  ## demographic variables
+  Age = physeq@sam_data$Age..years.,
+  Gender = ifelse(physeq@sam_data$Gender == "Male",1,0),
+  Nation = ifelse(physeq@sam_data$Nationality == "France",1,0),
+  Exercise = as.numeric(physeq@sam_data$Physical.activity..h.week.)
+)
+
+# OTU Table preparation
+otu_table <- otu_table(physeq)
+if (taxa_are_rows(physeq)) {
+  otu_table <- t(otu_table)
+}
+otu_matrix <- as.matrix(otu_table)
+
+# Define distance methods
+distance_methods <- c(
+  "manhattan", "euclidean", "canberra", "clark", "bray", "kulczynski", 
+  "jaccard", "gower", "altGower", "morisita", "horn", #"mountford", 
+  #"raup", 
+  "binomial", "chao", "cao", #"mahalanobis", 
+  "chisq", 
+  "chord", "hellinger", "aitchison", "robust.aitchison", "unifrac_unweighted", "unifrac_weighted_phyloseq", "unifrac_weighted_gunifrac"
+)
+
+# Calculate dissimilarity matrices and run PERMANOVA
+Triangle_inequality_cardiovascular <- list()
+pcoa_frac_cardiovascular <- list()
+adonis_results_cardiovascular <- list()
+MiRKAT_cardiovascular <- list()
+for (method in distance_methods) {
+  print(method)
+  if(method == "aitchison"){
+    ddist_matrix <- tryCatch(
+      vegan::vegdist(otu_matrix, method = method, pseudocount = 0.5),
+      error = function(e) {
+        message(paste("Error in method:", method, ":", e$message))
+        NULL
+      }
+    )
+  } else if (method == "unifrac_unweighted") {
+    dist_matrix <-(phyloseq::distance(physeq, method = "unifrac", weighted = FALSE))
+  } else if (method == "unifrac_weighted_phyloseq") {
+    dist_matrix <-(phyloseq::distance(physeq, method = "unifrac", weighted = TRUE))
+  } else if (method == "unifrac_weighted_gunifrac"){
+    otu_mat <- as(t(otu_table(physeq)), "matrix")  # Convert OTU table to matrix
+    tree <- phy_tree(physeq)  # Extract phylogenetic tree
+    unifrac_weight = GUniFrac(otu_mat, tree, alpha = c(0, 0.5, 1))$unifracs
+    
+    unifrac_weight = unifrac_weight[, , "d_1"]
+    # Compute UniFrac distances using GUniFrac
+    dist_matrix <-(unifrac_weight)
+
+  }  else {
+      dist_matrix <- tryCatch(
+      vegan::vegdist(otu_matrix, method = method),
+      error = function(e) {
+        message(paste("Error in method:", method, ":", e$message))
+        NULL
+      }
+    )
+  }
+  dist_gram = Dissimilarity_to_Gram(as.matrix(dist_matrix))
+  dist_gram = Remedy_Gram(dist_gram, "Tikhonov")
+  Triangle_inequality_cardiovascular[[method]] <- (Triangle.Check(as.matrix(dist_matrix)))
+    pcoa_result <- pcoa_gower(dist_gram)
+
+    # Extract eigenvalues
+    eigenvalues <- pcoa_result$eigenvalues
+    
+    # Compute the fraction of negative eigenvalues
+    negative_fraction <- abs(sum(eigenvalues[eigenvalues < 0])) / sum(abs(eigenvalues)) * 100
+    pcoa_frac_cardiovascular[[method]] <- negative_fraction
+  # Run PERMANOVA
+    
+  adonis_results_cardiovascular[[method]] <- permanova_gower(dist_gram, metadata)
+
+    MiRKAT_cardiovascular[[method]] <- MiRKAT_R(dist_gram,as.data.frame(metadata[,1]),metadata[,-1])
+}
+
+# Save results
+Triangle_inequality_cardiovascular
+pcoa_frac_cardiovascular
+adonis_results_cardiovascular
+MiRKAT_cardiovascular
+```
+
+```{r}
+# Initialize an empty data frame
+results_table <- data.frame(
+  Dissimilarity = character(),
+  IsMetric = character(),
+  NegCounter = numeric(),
+  ZeroCounter = numeric(),
+  PcoaNegFrac = character(),
+  
+  pseudo_F = numeric(),
+  pseudo_R2 = numeric(),
+  p_value = numeric(),
+  MiRKAT_Rsquared = numeric(),
+  
+  stringsAsFactors = FALSE
+)
+
+# List of dissimilarities
+methods <- names(Triangle_inequality_cardiovascular)
+
+# Loop through each method and extract values
+for (method in methods) {
+  is_metric <- if (!is.null(Triangle_inequality_cardiovascular[[method]]$is.metric)) 
+    ifelse(Triangle_inequality_cardiovascular[[method]]$is.metric == 1, "YES", "NO") else NA
+  neg_counter <- if (!is.null(Triangle_inequality_cardiovascular[[method]]$neg.counter)) Triangle_inequality_cardiovascular[[method]]$neg.counter else NA
+  zero_counter <- if (!is.null(Triangle_inequality_cardiovascular[[method]]$zero.counter)) Triangle_inequality_cardiovascular[[method]]$zero.counter else NA
+  pcoa_neg_frac = paste0(pcoa_frac_cardiovascular[[method]],"%")
+  # Extract Adonis2 values (default to NA if not present)
+  
+  
+  pseudo_F <- if (!is.null(adonis_results_cardiovascular[[method]]$pseudo_F)) {
+    as.numeric(adonis_results_cardiovascular[[method]]$pseudo_F)
+  } else {
+    NA_real_
+  }
+  
+  pseudo_R2 <- if (!is.null(adonis_results_cardiovascular[[method]]$pseudo_R2)) {
+    as.numeric(adonis_results_cardiovascular[[method]]$pseudo_R2)
+  } else {
+    NA_real_
+  }
+  
+  p_value <- if (!is.null(adonis_results_cardiovascular[[method]]$p_value)) {
+    as.numeric(adonis_results_cardiovascular[[method]]$p_value)
+  } else {
+    NA_real_
+  }
+  
+  # Safely extract MiRKAT values
+  MiRKAT_Rsquared <- if (!is.null(MiRKAT_cardiovascular[[method]])) {
+    as.numeric(MiRKAT_cardiovascular[[method]])
+  } else {
+    NA_real_
+  }
+  
+  
+  # Append to results_table
+  results_table <- rbind(
+    results_table,
+    data.frame(
+      Dissimilarity       = as.character(method),
+      IsMetric            = as.character(is_metric),
+      NegCounter          = neg_counter,
+      ZeroCounter         = zero_counter,
+      PcoaNegFrac         = pcoa_neg_frac,
+      
+      pseudo_F            = pseudo_F,
+      pseudo_R2           = pseudo_R2,
+      p_value             = p_value,
+      MiRKAT_Rsquared     = MiRKAT_Rsquared,
+      
+      stringsAsFactors    = FALSE
+    )
+  )
+}
+
+# Display the results table
+print(results_table)
+write.csv(results_table, "Tikhonov_results_table_cardiovascular.csv", row.names = TRUE)
+```
+
+
+# IBD_16s_data_V4.RData
+```{r}
+load("~/Library/CloudStorage/Box-Box/WenhaoLi@MDA/BetaDiversity/real data/Concordance_IBD/IBD_16s_data/IBD_16s_data_V4.RData")
+sample_data <- sample_data(phy1)
+rows_with_na <- apply(sample_data[, c(1,18, 50, 57, 115, 126, 127)], 1, function(x) any(x %in% c("not providednot provided", "-88", "not provided", "cd (from uc 7/17/2018)")))
+physeq <- prune_samples(!rows_with_na, phy1)
+
+# Prepare metadata
+metadata <- data.frame(
+  # Variable of interest
+  diagnosis = as.factor(physeq@sam_data$diagnosis),
+  age_at_diagnosis = as.numeric(physeq@sam_data$age_at__diagnosis),
+  host_age = as.numeric(physeq@sam_data$host_age),
+  host_height = as.numeric(physeq@sam_data$host_height),
+  race = physeq@sam_data$race,
+  sex = as.numeric(ifelse(physeq@sam_data$sex == "male", 1, 0)),
+  smoking = as.numeric(ifelse(physeq@sam_data$smoking == "n", 0, 1))
+)
+
+# OTU Table preparation
+otu_table <- otu_table(physeq)
+if (taxa_are_rows(physeq)) {
+  otu_table <- t(otu_table)
+}
+otu_matrix <- as.matrix(otu_table)
+
+# Define distance methods
+distance_methods <- c(
+  "manhattan", "euclidean", "canberra", "clark", "bray", "kulczynski", 
+  "jaccard", "gower", "altGower", "morisita", "horn", "mountford", 
+  "raup", "binomial", "chao", "cao", "mahalanobis", "chisq", 
+  "chord", "hellinger", "aitchison", "robust.aitchison", "unifrac_unweighted", "unifrac_weighted_phyloseq", "unifrac_weighted_gunifrac"
+)
+
+# Calculate dissimilarity matrices and run PERMANOVA
+Triangle_inequality_IBD_16s <- list()
+pcoa_frac_IBD_16s <- list()
+adonis_results_IBD_16s <- list()
+MiRKAT_IBD_16s <- list()
+
+for (method in distance_methods) {
+  print(method)
+  if(method == "aitchison"){
+    ddist_matrix <- tryCatch(
+      vegan::vegdist(otu_matrix, method = method, pseudocount = 0.5),
+      error = function(e) {
+        message(paste("Error in method:", method, ":", e$message))
+        NULL
+      }
+    )
+  } else if (method == "unifrac_unweighted") {
+    dist_matrix <-(phyloseq::distance(physeq, method = "unifrac", weighted = FALSE))
+  } else if (method == "unifrac_weighted_phyloseq") {
+    dist_matrix <-(phyloseq::distance(physeq, method = "unifrac", weighted = TRUE))
+  } else if (method == "unifrac_weighted_gunifrac"){
+    otu_mat <- as(t(otu_table(physeq)), "matrix")  # Convert OTU table to matrix
+    tree <- phy_tree(physeq)  # Extract phylogenetic tree
+    unifrac_weight = GUniFrac(otu_mat, tree, alpha = c(0, 0.5, 1))$unifracs
+    
+    unifrac_weight = unifrac_weight[, , "d_1"]
+    # Compute UniFrac distances using GUniFrac
+    dist_matrix <-(unifrac_weight)
+
+  }  else {
+      dist_matrix <- tryCatch(
+      vegan::vegdist(otu_matrix, method = method),
+      error = function(e) {
+        message(paste("Error in method:", method, ":", e$message))
+        NULL
+      }
+    )
+  }
+  dist_gram = Dissimilarity_to_Gram(as.matrix(dist_matrix))
+  dist_gram = Remedy_Gram(dist_gram, "Tikhonov")
+  Triangle_inequality_IBD_16s[[method]] <- (Triangle.Check(as.matrix(dist_matrix)))
+    pcoa_result <- pcoa_gower(dist_gram)
+
+    # Extract eigenvalues
+    eigenvalues <- pcoa_result$eigenvalues
+    
+    # Compute the fraction of negative eigenvalues
+    negative_fraction <- abs(sum(eigenvalues[eigenvalues < 0])) / sum(abs(eigenvalues)) * 100
+    pcoa_frac_IBD_16s[[method]] <- negative_fraction
+  # Run PERMANOVA
+  adonis_results_IBD_16s[[method]] <- permanova_gower(dist_gram, metadata)
+
+    MiRKAT_IBD_16s[[method]] <- MiRKAT_R(dist_gram,as.data.frame(metadata[,1]),metadata[,-1])
+}
+
+# Save results
+Triangle_inequality_IBD_16s
+pcoa_frac_IBD_16s
+adonis_results_IBD_16s
+MiRKAT_IBD_16s
+```
+
+```{r}
+# Initialize an empty data frame
+results_table <- data.frame(
+  Dissimilarity = character(),
+  IsMetric = character(),
+  NegCounter = numeric(),
+  ZeroCounter = numeric(),
+  PcoaNegFrac = character(),
+  
+  pseudo_F = numeric(),
+  pseudo_R2 = numeric(),
+  p_value = numeric(),
+  MiRKAT_Rsquared = numeric(),
+  
+  stringsAsFactors = FALSE
+)
+# List of dissimilarities
+methods <- names(Triangle_inequality_IBD_16s)
+
+# Loop through each method and extract values
+for (method in methods) {
+  is_metric <- if (!is.null(Triangle_inequality_IBD_16s[[method]]$is.metric)) 
+    ifelse(Triangle_inequality_IBD_16s[[method]]$is.metric == 1, "YES", "NO") else NA
+  neg_counter <- if (!is.null(Triangle_inequality_IBD_16s[[method]]$neg.counter)) Triangle_inequality_IBD_16s[[method]]$neg.counter else NA
+  zero_counter <- if (!is.null(Triangle_inequality_IBD_16s[[method]]$zero.counter)) Triangle_inequality_IBD_16s[[method]]$zero.counter else NA
+  pcoa_neg_frac = paste0(pcoa_frac_IBD_16s[[method]],"%")
+  # Extract Adonis2 values (default to NA if not present)
+  if (!is.null(adonis_results_IBD_16s[[method]])) {
+    F_value <- if (!is.null(adonis_results_IBD_16s[[method]]$pseudo_F)) adonis_results_IBD_16s[[method]]$pseudo_F else NA
+    P_value_adonis <- if (!is.null(adonis_results_IBD_16s[[method]]$p_value)) adonis_results_IBD_16s[[method]]$p_value else NA
+  } else {
+    F_value <- NA
+    P_value_adonis <- NA
+  }
+  
+  # Extract MiRKAT p-value (default to NA if not present)
+  
+  pseudo_F = adonis_results_IBD_16s[[method]]$pseudo_F
+  pseudo_R2 = adonis_results_IBD_16s[[method]]$pseudo_R2
+  p_value = adonis_results_IBD_16s[[method]]$p_value
+  MiRKAT_Rsquared = MiRKAT_IBD_16s[[method]]
+
+
+  
+  # Append to results table
+  results_table <- rbind(results_table, data.frame(
+    Dissimilarity = as.character(method),
+    IsMetric = as.character(is_metric),
+    NegCounter = as.numeric(neg_counter),
+    ZeroCounter = as.numeric(zero_counter),
+    PcoaNegFrac = as.character(pcoa_neg_frac),
+    
+    pseudo_F = as.numeric(pseudo_F),
+    pseudo_R2 = as.numeric(pseudo_R2),
+    p_value = as.numeric(p_value),
+    MiRKAT_Rsquared = as.numeric(MiRKAT_Rsquared),
+    
+    stringsAsFactors = FALSE
+  ))
+}
+# Display the results table
+print(results_table)
+write.csv(results_table, "Tikhonov_results_table_IBD_16s.csv", row.names = TRUE)
+```
+
+# IBD_wgs_data_V4.RData
+```{r}
+load("~/Library/CloudStorage/Box-Box/WenhaoLi@MDA/BetaDiversity/real data/Concordance_IBD/IBD_wgs_data/IBD_wgs_data_V4.RData")
+sample_data <- sample_data(phy)
+rows_with_na <- apply(sample_data[, c(1,18, 50, 57, 115, 126, 127)], 1, function(x) any(x %in% c("not providednot provided", "-88", "not provided")))
+physeq <- prune_samples(!rows_with_na, phy)
+
+# Prepare metadata
+metadata <- data.frame(
+  # Variable of interest
+  diagnosis = as.factor(physeq@sam_data$diagnosis),
+  age_at_diagnosis = as.numeric(physeq@sam_data$age_at__diagnosis),
+  host_age = as.numeric(physeq@sam_data$host_age),
+  host_height = as.numeric(physeq@sam_data$host_height),
+  race = physeq@sam_data$race,
+  sex = as.numeric(ifelse(physeq@sam_data$sex == "male", 1, 0)),
+  smoking = as.numeric(ifelse(physeq@sam_data$smoking == "n", 0, 1))
+)
+
+# OTU Table preparation
+otu_table <- otu_table(physeq)
+if (taxa_are_rows(physeq)) {
+  otu_table <- t(otu_table)
+}
+otu_matrix <- as.matrix(otu_table)
+
+# Define distance methods
+distance_methods <- c(
+  "manhattan", "euclidean", "canberra", "clark", "bray", "kulczynski", 
+  "jaccard", "gower", "altGower", "morisita", "horn", "mountford", 
+  "raup", "binomial", "chao", "cao", #"mahalanobis", 
+  "chisq", 
+  "chord", "hellinger", "aitchison", "robust.aitchison", "unifrac_unweighted", "unifrac_weighted_phyloseq", "unifrac_weighted_gunifrac"
+)
+
+# Calculate dissimilarity matrices and run PERMANOVA
+Triangle_inequality_IBD_wgs <- list()
+pcoa_frac_IBD_wgs <- list()
+adonis_results_IBD_wgs <- list()
+MiRKAT_IBD_wgs <- list()
+for (method in distance_methods) {
+  print(method)
+  if(method == "aitchison"){
+    ddist_matrix <- tryCatch(
+      vegan::vegdist(otu_matrix, method = method, pseudocount = 0.5),
+      error = function(e) {
+        message(paste("Error in method:", method, ":", e$message))
+        NULL
+      }
+    )
+  } else if (method == "unifrac_unweighted") {
+    dist_matrix <-(phyloseq::distance(physeq, method = "unifrac", weighted = FALSE))
+  } else if (method == "unifrac_weighted_phyloseq") {
+    dist_matrix <-(phyloseq::distance(physeq, method = "unifrac", weighted = TRUE))
+  } else if (method == "unifrac_weighted_gunifrac"){
+    otu_mat <- as(t(otu_table(physeq)), "matrix")  # Convert OTU table to matrix
+    tree <- phy_tree(physeq)  # Extract phylogenetic tree
+    unifrac_weight = GUniFrac(otu_mat, tree, alpha = c(0, 0.5, 1))$unifracs
+    
+    unifrac_weight = unifrac_weight[, , "d_1"]
+    # Compute UniFrac distances using GUniFrac
+    dist_matrix <-(unifrac_weight)
+
+  }  else {
+      dist_matrix <- tryCatch(
+      vegan::vegdist(otu_matrix, method = method),
+      error = function(e) {
+        message(paste("Error in method:", method, ":", e$message))
+        NULL
+      }
+    )
+  }
+  dist_gram = Dissimilarity_to_Gram(as.matrix(dist_matrix))
+  dist_gram = Remedy_Gram(dist_gram, "Tikhonov")
+  Triangle_inequality_IBD_wgs[[method]] <- (Triangle.Check(as.matrix(dist_matrix)))
+    pcoa_result <- pcoa_gower(dist_gram)
+
+    # Extract eigenvalues
+    eigenvalues <- pcoa_result$eigenvalues
+    
+    # Compute the fraction of negative eigenvalues
+    negative_fraction <- abs(sum(eigenvalues[eigenvalues < 0])) / sum(abs(eigenvalues)) * 100
+    pcoa_frac_IBD_wgs[[method]] <- negative_fraction
+  
+  # Run PERMANOVA
+  adonis_results_IBD_wgs[[method]] <- permanova_gower(dist_gram, metadata)
+
+    MiRKAT_IBD_wgs[[method]] <- MiRKAT_R(dist_gram,as.data.frame(metadata[,1]),metadata[,-1])
+}
+
+# Save results
+Triangle_inequality_IBD_wgs
+pcoa_frac_IBD_wgs
+adonis_results_IBD_wgs
+MiRKAT_IBD_wgs
+```
+
+```{r}
+# Initialize an empty data frame
+results_table <- data.frame(
+  Dissimilarity = character(),
+  IsMetric = character(),
+  NegCounter = numeric(),
+  ZeroCounter = numeric(),
+  PcoaNegFrac = character(),
+  
+  pseudo_F = numeric(),
+  pseudo_R2 = numeric(),
+  p_value = numeric(),
+  MiRKAT_Rsquared = numeric(),
+  
+  stringsAsFactors = FALSE
+)
+
+
+# List of dissimilarities
+methods <- names(Triangle_inequality_IBD_wgs)
+
+# Loop through each method and extract values
+for (method in methods) {
+  is_metric <- if (!is.null(Triangle_inequality_IBD_wgs[[method]]$is.metric)) 
+    ifelse(Triangle_inequality_IBD_wgs[[method]]$is.metric == 1, "YES", "NO") else NA
+  neg_counter <- if (!is.null(Triangle_inequality_IBD_wgs[[method]]$neg.counter)) Triangle_inequality_IBD_wgs[[method]]$neg.counter else NA
+  zero_counter <- if (!is.null(Triangle_inequality_IBD_wgs[[method]]$zero.counter)) Triangle_inequality_IBD_wgs[[method]]$zero.counter else NA
+  pcoa_neg_frac = paste0(pcoa_frac_IBD_wgs[[method]],"%")
+  # Extract Adonis2 values (default to NA if not present)
+  Permanova_Covcoeff = adonis_results_IBD_wgs[[method]]$Covcoeff
+  pseudo_F = adonis_results_IBD_wgs[[method]]$pseudo_F
+  pseudo_R2 = adonis_results_IBD_wgs[[method]]$pseudo_R2
+  p_value = adonis_results_IBD_wgs[[method]]$p_value
+  MiRKAT_Rsquared = MiRKAT_IBD_wgs[[method]]
+
+
+  
+  # Append to results table
+  results_table <- rbind(results_table, data.frame(
+    Dissimilarity = as.character(method),
+    IsMetric = as.character(is_metric),
+    NegCounter = as.numeric(neg_counter),
+    ZeroCounter = as.numeric(zero_counter),
+    PcoaNegFrac = as.character(pcoa_neg_frac),
+    
+    pseudo_F = as.numeric(pseudo_F),
+    pseudo_R2 = as.numeric(pseudo_R2),
+    p_value = as.numeric(p_value),
+    MiRKAT_Rsquared = as.numeric(MiRKAT_Rsquared),
+    
+    stringsAsFactors = FALSE
+  ))
+}
+
+
+# Display the results table
+print(results_table)
+write.csv(results_table, "Tikhonov_results_table_IBD_wgs.csv", row.names = TRUE)
+```
+
+
+# Pig_gut(13396).RData
+```{r}
+load("~/Library/CloudStorage/Box-Box/WenhaoLi@MDA/BetaDiversity/real data/Pig_gut/Pig_gut(13396).RData")
+sample_data <- sample_data(ps)
+rows_with_na <- apply(sample_data[, c(42, 1)], 1, function(x) any(x %in% c("na")))
+physeq <- prune_samples(!rows_with_na, ps)
+
+# Prepare metadata
+metadata <- data.frame(
+  # Variable of interest
+  treatment = as.numeric(ifelse(physeq@sam_data$treatment=="LR", 0, 1)),
+  age = as.numeric(physeq@sam_data$age)
+)
+
+# OTU Table preparation
+otu_table <- otu_table(physeq)
+if (taxa_are_rows(physeq)) {
+  otu_table <- t(otu_table)
+}
+otu_matrix <- as.matrix(otu_table)
+
+# Define distance methods
+distance_methods <- c(
+  "manhattan", "euclidean", "canberra", "clark", "bray", "kulczynski", 
+  "jaccard", "gower", "altGower", "morisita", "horn", "mountford", 
+  #"raup", 
+  "binomial", "chao", "cao", "mahalanobis", 
+  "chisq", 
+  "chord", "hellinger", "aitchison", "robust.aitchison", "unifrac_unweighted", "unifrac_weighted_phyloseq", "unifrac_weighted_gunifrac"
+)
+
+# Calculate dissimilarity matrices and run PERMANOVA
+Triangle_inequality_Pig_gut <- list()
+pcoa_frac_Pig_gut <- list()
+adonis_results_Pig_gut <- list()
+MiRKAT_Pig_gut <- list()
+for (method in distance_methods) {
+
+  if(method == "aitchison"){
+    ddist_matrix <- tryCatch(
+      vegan::vegdist(otu_matrix, method = method, pseudocount = 0.5),
+      error = function(e) {
+        message(paste("Error in method:", method, ":", e$message))
+        NULL
+      }
+    )
+  } else if (method == "unifrac_unweighted") {
+    dist_matrix <-(phyloseq::distance(physeq, method = "unifrac", weighted = FALSE))
+  } else if (method == "unifrac_weighted_phyloseq") {
+    dist_matrix <-(phyloseq::distance(physeq, method = "unifrac", weighted = TRUE))
+  } else if (method == "unifrac_weighted_gunifrac"){
+    otu_mat <- as(t(otu_table(physeq)), "matrix")  # Convert OTU table to matrix
+    tree <- phy_tree(physeq)  # Extract phylogenetic tree
+    unifrac_weight = GUniFrac(otu_mat, tree, alpha = c(0, 0.5, 1))$unifracs
+    
+    unifrac_weight = unifrac_weight[, , "d_1"]
+    # Compute UniFrac distances using GUniFrac
+    dist_matrix <-(unifrac_weight)
+
+  }  else {
+      dist_matrix <- tryCatch(
+      vegan::vegdist(otu_matrix, method = method),
+      error = function(e) {
+        message(paste("Error in method:", method, ":", e$message))
+        NULL
+      }
+    )
+  }
+  print(method)
+  dist_gram = Dissimilarity_to_Gram(as.matrix(dist_matrix))
+  dist_gram = Remedy_Gram(dist_gram, "Tikhonov")
+  Triangle_inequality_Pig_gut[[method]] <- (Triangle.Check(as.matrix(dist_matrix)))
+    pcoa_result <- pcoa_gower(dist_gram)
+
+    # Extract eigenvalues
+    eigenvalues <- pcoa_result$eigenvalues
+    
+    # Compute the fraction of negative eigenvalues
+    negative_fraction <- abs(sum(eigenvalues[eigenvalues < 0])) / sum(abs(eigenvalues)) * 100
+    pcoa_frac_Pig_gut[[method]] <- negative_fraction
+  
+  # Run PERMANOVA
+  adonis_results_Pig_gut[[method]] <- permanova_gower(dist_gram, metadata)
+
+    MiRKAT_Pig_gut[[method]] <- MiRKAT_R(dist_gram,as.data.frame(metadata[,1]),as.data.frame(metadata[,-1]))
+}
+
+# Save results
+Triangle_inequality_Pig_gut
+pcoa_frac_Pig_gut
+adonis_results_Pig_gut
+MiRKAT_Pig_gut
+```
+
+```{r}
+# Initialize an empty data frame
+results_table <- data.frame(
+  Dissimilarity = character(),
+  IsMetric = character(),
+  NegCounter = numeric(),
+  ZeroCounter = numeric(),
+  PcoaNegFrac = character(),
+  
+  pseudo_F = numeric(),
+  pseudo_R2 = numeric(),
+  p_value = numeric(),
+  MiRKAT_Rsquared = numeric(),
+  
+  stringsAsFactors = FALSE
+)
+
+
+# List of dissimilarities
+methods <- names(Triangle_inequality_Pig_gut)
+
+# Loop through each method and extract values
+for (method in methods) {
+  is_metric <- if (!is.null(Triangle_inequality_Pig_gut[[method]]$is.metric)) 
+    ifelse(Triangle_inequality_Pig_gut[[method]]$is.metric == 1, "YES", "NO") else NA
+  neg_counter <- if (!is.null(Triangle_inequality_Pig_gut[[method]]$neg.counter)) Triangle_inequality_Pig_gut[[method]]$neg.counter else NA
+  zero_counter <- if (!is.null(Triangle_inequality_Pig_gut[[method]]$zero.counter)) Triangle_inequality_Pig_gut[[method]]$zero.counter else NA
+  pcoa_neg_frac = paste0(pcoa_frac_Pig_gut[[method]],"%")
+  # Extract Adonis2 values (default to NA if not present)
+ 
+  pseudo_F = adonis_results_Pig_gut[[method]]$pseudo_F
+  pseudo_R2 = adonis_results_Pig_gut[[method]]$pseudo_R2
+  p_value = adonis_results_Pig_gut[[method]]$p_value
+  MiRKAT_Rsquared = MiRKAT_Pig_gut[[method]]
+  
+
+  
+  # Append to results table
+  results_table <- rbind(results_table, data.frame(
+    Dissimilarity = as.character(method),
+    IsMetric = as.character(is_metric),
+    NegCounter = as.numeric(neg_counter),
+    ZeroCounter = as.numeric(zero_counter),
+    PcoaNegFrac = as.character(pcoa_neg_frac),
+    
+    pseudo_F = as.numeric(pseudo_F),
+    pseudo_R2 = as.numeric(pseudo_R2),
+    p_value = as.numeric(p_value),
+    MiRKAT_Rsquared = as.numeric(MiRKAT_Rsquared),
+    
+    stringsAsFactors = FALSE
+  ))
+}
+
+
+# Display the results table
+print(results_table)
+write.csv(results_table, "Tikhonov_results_table_Pig_gut.csv", row.names = TRUE)
+```
+
+
+# HIV_gut
+```{r}
+load("~/Library/CloudStorage/Box-Box/WenhaoLi@MDA/BetaDiversity/real data/HIV_gut/HIV_gut(13338).RData")
+sample_data <- sample_data(ps)
+rows_with_na <- apply(sample_data[, c(119, 182, 73, 8, 76)], 1, function(x) any(x %in% c("na", "not collected", "")))
+physeq <- prune_samples(!rows_with_na, ps)
+
+# Prepare metadata
+metadata <- data.frame(
+  # Variable of interest
+  disease_score = as.numeric(ifelse(physeq@sam_data$metab_disease_score_binary=="LOW", 0, 1)),
+  race = physeq@sam_data$race, 
+  host_age = as.numeric(physeq@sam_data$host_age),
+  alcohol_g_usda = as.numeric(physeq@sam_data$alcohol_g_usda), 
+  host_body_mass_index = as.numeric(physeq@sam_data$host_body_mass_index)
+)
+
+# OTU Table preparation
+otu_table <- otu_table(physeq)
+if (taxa_are_rows(physeq)) {
+  otu_table <- t(otu_table)
+}
+otu_matrix <- as.matrix(otu_table)
+
+# Define distance methods
+distance_methods <- c(
+  "manhattan", "euclidean", "canberra", "clark", "bray", "kulczynski", 
+  "jaccard", "gower", "altGower", "morisita", "horn", "mountford", 
+  #"raup", 
+  "binomial", "chao", "cao", "mahalanobis", "chisq", 
+  "chord", "hellinger", "aitchison", "robust.aitchison", "unifrac_unweighted", "unifrac_weighted_phyloseq", "unifrac_weighted_gunifrac"
+)
+
+# Calculate dissimilarity matrices and run PERMANOVA
+Triangle_inequality_HIV_gut <- list()
+pcoa_frac_HIV_gut <- list()
+adonis_results_HIV_gut <- list()
+MiRKAT_HIV_gut <- list()
+for (method in distance_methods) {
+  if(method == "aitchison"){
+    ddist_matrix <- tryCatch(
+      vegan::vegdist(otu_matrix, method = method, pseudocount = 0.5),
+      error = function(e) {
+        message(paste("Error in method:", method, ":", e$message))
+        NULL
+      }
+    )
+  } else if (method == "unifrac_unweighted") {
+    dist_matrix <-(phyloseq::distance(physeq, method = "unifrac", weighted = FALSE))
+  } else if (method == "unifrac_weighted_phyloseq") {
+    dist_matrix <-(phyloseq::distance(physeq, method = "unifrac", weighted = TRUE))
+  } else if (method == "unifrac_weighted_gunifrac"){
+    otu_mat <- as(t(otu_table(physeq)), "matrix")  # Convert OTU table to matrix
+    tree <- phy_tree(physeq)  # Extract phylogenetic tree
+    unifrac_weight = GUniFrac(otu_mat, tree, alpha = c(0, 0.5, 1))$unifracs
+    
+    unifrac_weight = unifrac_weight[, , "d_1"]
+    # Compute UniFrac distances using GUniFrac
+    dist_matrix <-(unifrac_weight)
+
+  }  else {
+      dist_matrix <- tryCatch(
+      vegan::vegdist(otu_matrix, method = method),
+      error = function(e) {
+        message(paste("Error in method:", method, ":", e$message))
+        NULL
+      }
+    )
+  }
+  print(method)
+  dist_gram = Dissimilarity_to_Gram(as.matrix(dist_matrix))
+  dist_gram = Remedy_Gram(dist_gram, "Tikhonov")
+  Triangle_inequality_HIV_gut[[method]] <- (Triangle.Check(as.matrix(dist_matrix)))
+    pcoa_result <- pcoa_gower(dist_gram)
+
+    # Extract eigenvalues
+    eigenvalues <- pcoa_result$eigenvalues
+    
+    # Compute the fraction of negative eigenvalues
+    negative_fraction <- abs(sum(eigenvalues[eigenvalues < 0])) / sum(abs(eigenvalues)) * 100
+    pcoa_frac_HIV_gut[[method]] <- negative_fraction
+  
+  # Run PERMANOVA
+   adonis_results_HIV_gut[[method]] <- permanova_gower(dist_gram, metadata)
+
+    MiRKAT_HIV_gut[[method]] <- MiRKAT_R(dist_gram,as.data.frame(metadata[,1]),as.data.frame(metadata[,-1]))
+}
+
+# Save results
+Triangle_inequality_HIV_gut
+pcoa_frac_HIV_gut
+adonis_results_HIV_gut
+MiRKAT_HIV_gut
+```
+
+```{r}
+# Initialize an empty data frame
+results_table <- data.frame(
+  Dissimilarity = character(),
+  IsMetric = character(),
+  NegCounter = numeric(),
+  ZeroCounter = numeric(),
+  PcoaNegFrac = character(),
+  
+  pseudo_F = numeric(),
+  pseudo_R2 = numeric(),
+  p_value = numeric(),
+  MiRKAT_Rsquared = numeric(),
+  
+  stringsAsFactors = FALSE
+)
+# List of dissimilarities
+methods <- names(Triangle_inequality_HIV_gut)
+
+# Loop through each method and extract values
+for (method in methods) {
+  is_metric <- if (!is.null(Triangle_inequality_HIV_gut[[method]]$is.metric)) 
+    ifelse(Triangle_inequality_HIV_gut[[method]]$is.metric == 1, "YES", "NO") else NA
+  neg_counter <- if (!is.null(Triangle_inequality_HIV_gut[[method]]$neg.counter)) Triangle_inequality_HIV_gut[[method]]$neg.counter else NA
+  zero_counter <- if (!is.null(Triangle_inequality_HIV_gut[[method]]$zero.counter)) Triangle_inequality_HIV_gut[[method]]$zero.counter else NA
+  pcoa_neg_frac = paste0(pcoa_frac_HIV_gut[[method]],"%")
+  # Extract Adonis2 values (default to NA if not present)
+
+  pseudo_F = adonis_results_HIV_gut[[method]]$pseudo_F
+  pseudo_R2 = adonis_results_HIV_gut[[method]]$pseudo_R2
+  p_value = adonis_results_HIV_gut[[method]]$p_value
+  MiRKAT_Rsquared = MiRKAT_HIV_gut[[method]]
+ 
+
+  
+  # Append to results table
+  results_table <- rbind(results_table, data.frame(
+    Dissimilarity = as.character(method),
+    IsMetric = as.character(is_metric),
+    NegCounter = as.numeric(neg_counter),
+    ZeroCounter = as.numeric(zero_counter),
+    PcoaNegFrac = as.character(pcoa_neg_frac),
+    
+    pseudo_F = as.numeric(pseudo_F),
+    pseudo_R2 = as.numeric(pseudo_R2),
+    p_value = as.numeric(p_value),
+    MiRKAT_Rsquared = as.numeric(MiRKAT_Rsquared),
+    
+    stringsAsFactors = FALSE
+  ))
+}
+
+# Display the results table
+print(results_table)
+write.csv(results_table, "Tikhonov_results_table_HIV_gut.csv", row.names = TRUE)
+```
+
+
+# Concordance_oral_16S
+```{r}
+load("~/Library/CloudStorage/Box-Box/WenhaoLi@MDA/BetaDiversity/real data/Concordance_oral/SixteenSphylo/SixteenSphylo.Rdata")
+sample_data <- sample_data(physeq)
+rows_with_na <- apply(sample_data[, c(3, 2, 4, 5, 25, 27, 42, 43)], 1, function(x) any(x %in% c("missing", "not provided", "")))
+physeq <- prune_samples(!rows_with_na, physeq)
+
+# Prepare metadata
+metadata <- data.frame(
+  # Variable of interest bmi, sex, educ, host_age,raceethn, host_height,host_weight,adipnectin
+  crp = as.numeric(physeq@sam_data$crp),
+  bmi = as.numeric(physeq@sam_data$bmi),
+  sex = as.numeric(physeq@sam_data$sex),
+  educ = as.numeric(physeq@sam_data$educ),
+  host_age = as.numeric(physeq@sam_data$host_age),
+  raceethn = as.numeric(physeq@sam_data$raceethn),
+  host_height = as.numeric(physeq@sam_data$host_height),
+  host_weight = as.numeric(physeq@sam_data$host_weight)
+  
+)
+
+# OTU Table preparation
+otu_table <- otu_table(physeq)
+if (taxa_are_rows(physeq)) {
+  otu_table <- t(otu_table)
+}
+otu_matrix <- as.matrix(otu_table)
+
+# Define distance methods
+distance_methods <- c(
+  "manhattan", "euclidean", "canberra", "clark", "bray", "kulczynski", 
+  "jaccard", "gower", "altGower", "morisita", "horn", "mountford", 
+  "raup", "binomial", "chao", "cao", "mahalanobis", "chisq", 
+  "chord", "hellinger", "aitchison", "robust.aitchison", "unifrac_unweighted", "unifrac_weighted_phyloseq", "unifrac_weighted_gunifrac"
+)
+
+# Calculate dissimilarity matrices and run PERMANOVA
+Triangle_inequality_Concordance_oral_16S <- list()
+pcoa_frac_Concordance_oral_16S <- list()
+adonis_results_Concordance_oral_16S <- list()
+MiRKAT_Concordance_oral_16S <- list()
+for (method in distance_methods) {
+  if(method == "aitchison"){
+    ddist_matrix <- tryCatch(
+      vegan::vegdist(otu_matrix, method = method, pseudocount = 0.5),
+      error = function(e) {
+        message(paste("Error in method:", method, ":", e$message))
+        NULL
+      }
+    )
+  } else if (method == "unifrac_unweighted") {
+    dist_matrix <-(phyloseq::distance(physeq, method = "unifrac", weighted = FALSE))
+  } else if (method == "unifrac_weighted_phyloseq") {
+    dist_matrix <-(phyloseq::distance(physeq, method = "unifrac", weighted = TRUE))
+  } else if (method == "unifrac_weighted_gunifrac"){
+    otu_mat <- as(t(otu_table(physeq)), "matrix")  # Convert OTU table to matrix
+    tree <- phy_tree(physeq)  # Extract phylogenetic tree
+    unifrac_weight = GUniFrac(otu_mat, tree, alpha = c(0, 0.5, 1))$unifracs
+    
+    unifrac_weight = unifrac_weight[, , "d_1"]
+    # Compute UniFrac distances using GUniFrac
+    dist_matrix <-(unifrac_weight)
+
+  }  else {
+      dist_matrix <- tryCatch(
+      vegan::vegdist(otu_matrix, method = method),
+      error = function(e) {
+        message(paste("Error in method:", method, ":", e$message))
+        NULL
+      }
+    )
+  }
+  print(method)
+  dist_gram = Dissimilarity_to_Gram(as.matrix(dist_matrix))
+  dist_gram = Remedy_Gram(dist_gram, "Tikhonov")
+  Triangle_inequality_Concordance_oral_16S[[method]] <- (Triangle.Check(as.matrix(dist_matrix)))
+    pcoa_result <- pcoa_gower(dist_gram)
+
+    # Extract eigenvalues
+    eigenvalues <- pcoa_result$eigenvalues
+    
+    # Compute the fraction of negative eigenvalues
+    negative_fraction <- abs(sum(eigenvalues[eigenvalues < 0])) / sum(abs(eigenvalues)) * 100
+    pcoa_frac_Concordance_oral_16S[[method]] <- negative_fraction
+  # Run PERMANOVA
+  adonis_results_Concordance_oral_16S[[method]] <- permanova_gower(dist_gram, metadata)
+
+    MiRKAT_Concordance_oral_16S[[method]] <- MiRKAT_R(dist_gram,as.data.frame(metadata[,1]),as.data.frame(metadata[,-1]))
+}
+
+# Save results
+Triangle_inequality_Concordance_oral_16S
+pcoa_frac_Concordance_oral_16S
+adonis_results_Concordance_oral_16S
+MiRKAT_Concordance_oral_16S
+```
+
+```{r}
+# Initialize an empty data frame
+results_table <- data.frame(
+  Dissimilarity = character(),
+  IsMetric = character(),
+  NegCounter = numeric(),
+  ZeroCounter = numeric(),
+  PcoaNegFrac = character(),
+  
+  pseudo_F = numeric(),
+  pseudo_R2 = numeric(),
+  p_value = numeric(),
+  MiRKAT_Rsquared = numeric(),
+  
+  stringsAsFactors = FALSE
+)
+
+# List of dissimilarities
+methods <- names(Triangle_inequality_Concordance_oral_16S)
+
+# Loop through each method and extract values
+for (method in methods) {
+  is_metric <- if (!is.null(Triangle_inequality_Concordance_oral_16S[[method]]$is.metric)) 
+    ifelse(Triangle_inequality_Concordance_oral_16S[[method]]$is.metric == 1, "YES", "NO") else NA
+  neg_counter <- if (!is.null(Triangle_inequality_Concordance_oral_16S[[method]]$neg.counter)) Triangle_inequality_Concordance_oral_16S[[method]]$neg.counter else NA
+  zero_counter <- if (!is.null(Triangle_inequality_Concordance_oral_16S[[method]]$zero.counter)) Triangle_inequality_Concordance_oral_16S[[method]]$zero.counter else NA
+  pcoa_neg_frac = paste0(pcoa_frac_Concordance_oral_16S[[method]],"%")
+  # Extract Adonis2 values (default to NA if not present)
+
+  pseudo_F = adonis_results_Concordance_oral_16S[[method]]$pseudo_F
+  pseudo_R2 = adonis_results_Concordance_oral_16S[[method]]$pseudo_R2
+  p_value = adonis_results_Concordance_oral_16S[[method]]$p_value
+  MiRKAT_Rsquared = MiRKAT_Concordance_oral_16S[[method]]
+  
+
+  
+  # Append to results table
+  results_table <- rbind(results_table, data.frame(
+    Dissimilarity = as.character(method),
+    IsMetric = as.character(is_metric),
+    NegCounter = as.numeric(neg_counter),
+    ZeroCounter = as.numeric(zero_counter),
+    PcoaNegFrac = as.character(pcoa_neg_frac),
+    
+    pseudo_F = as.numeric(pseudo_F),
+    pseudo_R2 = as.numeric(pseudo_R2),
+    p_value = as.numeric(p_value),
+    MiRKAT_Rsquared = as.numeric(MiRKAT_Rsquared),
+    
+    stringsAsFactors = FALSE
+  ))
+}
+# Display the results table
+print(results_table)
+write.csv(results_table, "Tikhonov_results_table_Concordance_oral_16S.csv", row.names = TRUE)
+```
+
+# Check by qiime2
+
+```{r}
+library(biomformat)
+library(qiime2R)
+otu_mat <- as(otu_table(physeq), "matrix")
+if (!taxa_are_rows(otu_table(physeq))) {
+  otu_mat <- t(otu_mat) 
+}
+otu_biom <- make_biom(data = otu_mat)
+write_biom(otu_biom, "feature_table.biom")
+
+tree <- phy_tree(physeq)
+write.tree(tree, file = "phylogenetic_tree.nwk")
+```
+
+
+
+
+# Summarize
+
+```{r}
+# 1. List all csv files that match the pattern
+files <- list.files(pattern = "^Tikhonov_results_table_.*\\.csv$", full.names = TRUE)
+
+# 2. Read each CSV into a list of data frames, adding a "source" column
+df_list <- lapply(files, function(f) {
+  df <- read.csv(f, stringsAsFactors = FALSE)
+  # Extract the part after 'results_table_' and before '.csv'
+  df_name <- sub("Tikhonov_results_table_(.*)\\.csv", "\\1", basename(f))
+  # Add as a new column at the front
+  df <- cbind(source = df_name, df)
+  return(df)
+})
+
+# 3. Combine all data frames row-wise
+combined_df <- do.call(rbind, df_list)[, -2]
+
+# Now combined_df contains all rows from each CSV,
+# with a new 'source' column indicating the file of origin.
+head(combined_df)
+write.csv(combined_df, "tikhonov_filtered_result.csv", row.names = TRUE)
+```
+
+
+```{r}
+library(dplyr)
+data = read.csv("tikhonov_filtered_result.csv")
+dissimilarity_keep <- c( "clark", "bray", 
+                        "jaccard", "chao", "cao", 
+                        "unifrac_unweighted", "unifrac_weighted_gunifrac", "unifrac_weighted_phyloseq")
+
+data <- data %>%
+  mutate(PcoaNegFrac = as.numeric(gsub("%", "", PcoaNegFrac)))
+
+# Filter and sort the data
+filtered_data <- data %>%
+  filter(Dissimilarity %in% dissimilarity_keep, 
+         IsMetric == "NO" | PcoaNegFrac > 0) %>%
+  arrange(Dissimilarity)  # Sort by Dissimilarity
+
+
+# Display the filtered data
+print(filtered_data)
+
+# Optionally, save the filtered data to a new CSV file
+write.csv(filtered_data, "filtered_data_Tikhonov.csv", row.names = FALSE)
+```
+
+
+
