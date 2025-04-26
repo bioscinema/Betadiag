@@ -125,7 +125,7 @@ $FNI
 [1] 0.1180882
 ```
 ```r
-lot(wu.check$collinearity.score,xlab = "Sample",ylab = "Collinearity Score") 
+plot(wu.check$collinearity.score,xlab = "Sample",ylab = "Collinearity Score") 
 plot(wu.check$nonlinearity.score,xlab = "Sample",ylab = "Nonlinearity Score") 
 ```
 ![Per-sample collinearity](Example/collinearity_score.png)
