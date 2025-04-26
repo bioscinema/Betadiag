@@ -71,9 +71,7 @@ wu_dist   <- phyloseq::distance(physeq, method = "wunifrac")
 wu_matrix <- as.matrix(wu_dist)
 
 wu.check <- check_distance(wu_matrix)
-```
 
-```r
 # Basic flags
 wu.check$is.metric
 wu.check$is.Euclidean
