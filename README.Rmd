@@ -82,11 +82,13 @@ wu.check$FNI
 ```{r}
 plot(wu.check$collinearity.score,xlab = "Sample",ylab = "Collinearity Score") 
 ```
+
 Collinearity plot – Every point sits at ≈ −1, meaning each sample’s distance vector is almost perfectly anti-parallel to the average vector. In practice, this indicates very little pairwise collinearity, so angle-preserving (metric) ordinations shouldn’t be distorted by redundant information.
 
 ```{r}
 plot(wu.check$nonlinearity.score,xlab = "Sample",ylab = "Nonlinearity Score") 
 ```
+
 Non-linearity plot – Scores vary widely, with several pronounced spikes, showing substantial non-linear distortion across samples. Linear methods such as classical PCoA may mis-represent true relationships; non-linear embeddings (t-SNE, UMAP) or a PSD remedy are advisable before interpretation.
 
 ```{r}

@@ -18,6 +18,21 @@ To install the development version of Betadiag from GitHub:
 # install.packages("devtools")
 library(devtools)
 devtools::install_github("bioscinema/Betadiag")
+```
+
+    ## 
+    ## ── R CMD build ─────────────────────────────────────────────────────────────────
+    ##      checking for file ‘/private/var/folders/nt/5pd9877s5lx6vwzd5f15jz7r0000gn/T/Rtmp9B6qSw/remotes32f743ff328/bioscinema-Betadiag-7420ec0/DESCRIPTION’ ...  ✔  checking for file ‘/private/var/folders/nt/5pd9877s5lx6vwzd5f15jz7r0000gn/T/Rtmp9B6qSw/remotes32f743ff328/bioscinema-Betadiag-7420ec0/DESCRIPTION’
+    ##   ─  preparing ‘Betadiag’:
+    ##      checking DESCRIPTION meta-information ...  ✔  checking DESCRIPTION meta-information
+    ##   ─  checking for LF line-endings in source and make files and shell scripts
+    ##   ─  checking for empty or unneeded directories
+    ##    Omitted ‘LazyData’ from DESCRIPTION
+    ##   ─  building ‘Betadiag_0.0.1.tar.gz’
+    ##      
+    ## 
+
+``` r
 library(Betadiag)
 ```
 
@@ -44,7 +59,7 @@ devtools::install_github("bioscinema/Betadiag")
 
     ## Using GitHub PAT from the git credential store.
 
-    ## Skipping install of 'Betadiag' from a github remote, the SHA1 (6b15a906) has not changed since last install.
+    ## Skipping install of 'Betadiag' from a github remote, the SHA1 (7420ec02) has not changed since last install.
     ##   Use `force = TRUE` to force installation
 
 ``` r
@@ -103,20 +118,23 @@ wu.check$FNI
 plot(wu.check$collinearity.score,xlab = "Sample",ylab = "Collinearity Score") 
 ```
 
-![](README_files/figure-gfm/unnamed-chunk-3-1.png)<!-- --> Collinearity
-plot – Every point sits at ≈ −1, meaning each sample’s distance vector
-is almost perfectly anti-parallel to the average vector. In practice,
-this indicates very little pairwise collinearity, so angle-preserving
-(metric) ordinations shouldn’t be distorted by redundant information.
+![](README_files/figure-gfm/unnamed-chunk-3-1.png)<!-- -->
+
+Collinearity plot – Every point sits at ≈ −1, meaning each sample’s
+distance vector is almost perfectly anti-parallel to the average vector.
+In practice, this indicates very little pairwise collinearity, so
+angle-preserving (metric) ordinations shouldn’t be distorted by
+redundant information.
 
 ``` r
 plot(wu.check$nonlinearity.score,xlab = "Sample",ylab = "Nonlinearity Score") 
 ```
 
-![](README_files/figure-gfm/unnamed-chunk-4-1.png)<!-- --> Non-linearity
-plot – Scores vary widely, with several pronounced spikes, showing
-substantial non-linear distortion across samples. Linear methods such as
-classical PCoA may mis-represent true relationships; non-linear
+![](README_files/figure-gfm/unnamed-chunk-4-1.png)<!-- -->
+
+Non-linearity plot – Scores vary widely, with several pronounced spikes,
+showing substantial non-linear distortion across samples. Linear methods
+such as classical PCoA may mis-represent true relationships; non-linear
 embeddings (t-SNE, UMAP) or a PSD remedy are advisable before
 interpretation.
 
@@ -161,7 +179,7 @@ wu.evalution$pseudo_R2
 wu.evalution$permanova_p
 ```
 
-    ## [1] 0.5115115
+    ## [1] 0.5005005
 
 ``` r
 wu.evalution$MiRKAT_R2
@@ -212,7 +230,7 @@ wu.higham.evalution$pseudo_R2
 wu.higham.evalution$permanova_p
 ```
 
-    ## [1] 0.2092092
+    ## [1] 0.1851852
 
 ``` r
 wu.higham.evalution$MiRKAT_R2
@@ -273,7 +291,7 @@ wu.tik.evalution$pseudo_R2
 wu.tik.evalution$permanova_p
 ```
 
-    ## [1] 0.3693694
+    ## [1] 0.3713714
 
 ``` r
 wu.tik.evalution$MiRKAT_R2
@@ -309,6 +327,6 @@ data.frame(
 ```
 
     ##     Matrix Euclidean  Pseudo_R2 PERM_pval
-    ## 1      Raw         0 0.07595821 0.5115115
-    ## 2   Higham         1 0.08490423 0.2092092
-    ## 3 Tikhonov         1 0.08180331 0.3693694
+    ## 1      Raw         0 0.07595821 0.5005005
+    ## 2   Higham         1 0.08490423 0.1851852
+    ## 3 Tikhonov         1 0.08180331 0.3713714
