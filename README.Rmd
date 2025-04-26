@@ -1,19 +1,18 @@
-
+---
+output: github_document
+---
 # Betadiag
 
 Diagnostics and Remedy Tools for Beta Diversity Analysis
 
-Betadiag is an R package designed to diagnose, evaluate, and correct
-issues in beta diversity analysis, particularly when working with
-dissimilarity matrices from ecological and microbiome studies. It
-provides tools to assess matrix properties, perform ordination and
-statistical evaluation, and apply remedies to ensure valid analysis.
+Betadiag is an R package designed to diagnose, evaluate, and correct issues in beta diversity analysis, particularly when working with dissimilarity matrices from ecological and microbiome studies. It provides tools to assess matrix properties, perform ordination and statistical evaluation, and apply remedies to ensure valid analysis.
 
 ## Installation
 
 To install the development version of Betadiag from GitHub:
 
-``` r
+
+```{r, message = FALSE}
 # Install devtools if not already installed
 # install.packages("devtools")
 library(devtools)
@@ -26,28 +25,20 @@ library(Betadiag)
 - Check whether dissimilarity matrices are metric and Euclidean
 - Assess triangle inequality violations, collinearity, and nonlinearity
 - Convert dissimilarity matrices into Gram matrices
-- Perform Principal Coordinate Analysis (PCoA) and eigenvalue
-  decomposition
+- Perform Principal Coordinate Analysis (PCoA) and eigenvalue decomposition
 - Conduct PERMANOVA and pseudo R² analysis for association testing
-- Apply Higham or Tikhonov corrections to enforce positive
-  semi-definiteness
+- Apply Higham or Tikhonov corrections to enforce positive semi-definiteness
 - Compute weighted UniFrac distances directly from phyloseq objects
 
 ## End-to-end demo: weighted UniFrac on IBD 16S data
 
-``` r
+
+```{r, warning=FALSE}
 # Install Betadiag (dev) and dependencies ---------------------------------
 # install.packages("devtools")
 library(devtools)
 devtools::install_github("bioscinema/Betadiag")
-```
 
-    ## Using GitHub PAT from the git credential store.
-
-    ## Skipping install of 'Betadiag' from a github remote, the SHA1 (6b15a906) has not changed since last install.
-    ##   Use `force = TRUE` to force installation
-
-``` r
 library(Betadiag)
 library(phyloseq)
 library(ggplot2)
@@ -83,44 +74,22 @@ wu_matrix <- as.matrix(wu_dist)
 
 wu.check <- check_distance(wu_matrix)
 wu.check$is.metric
-```
-
-    ## [1] 0
-
-``` r
 wu.check$is.Euclidean
-```
-
-    ## [1] 0
-
-``` r
 wu.check$FNI
 ```
 
-    ## [1] 0.1180882
 
-``` r
+```{r}
 plot(wu.check$collinearity.score,xlab = "Sample",ylab = "Collinearity Score") 
 ```
+Collinearity plot – Every point sits at ≈ −1, meaning each sample’s distance vector is almost perfectly anti-parallel to the average vector. In practice, this indicates very little pairwise collinearity, so angle-preserving (metric) ordinations shouldn’t be distorted by redundant information.
 
-![](README_files/figure-gfm/unnamed-chunk-3-1.png)<!-- --> Collinearity
-plot – Every point sits at ≈ −1, meaning each sample’s distance vector
-is almost perfectly anti-parallel to the average vector. In practice,
-this indicates very little pairwise collinearity, so angle-preserving
-(metric) ordinations shouldn’t be distorted by redundant information.
-
-``` r
+```{r}
 plot(wu.check$nonlinearity.score,xlab = "Sample",ylab = "Nonlinearity Score") 
 ```
+Non-linearity plot – Scores vary widely, with several pronounced spikes, showing substantial non-linear distortion across samples. Linear methods such as classical PCoA may mis-represent true relationships; non-linear embeddings (t-SNE, UMAP) or a PSD remedy are advisable before interpretation.
 
-![](README_files/figure-gfm/unnamed-chunk-4-1.png)<!-- --> Non-linearity
-plot – Scores vary widely, with several pronounced spikes, showing
-substantial non-linear distortion across samples. Linear methods such as
-classical PCoA may mis-represent true relationships; non-linear
-embeddings (t-SNE, UMAP) or a PSD remedy are advisable before
-interpretation.
-
-``` r
+```{r}
 # ---- Baseline evaluation ------------------------------------------------
 wu.evalution <- evaluate_beta(
   wu_matrix,
@@ -129,47 +98,17 @@ wu.evalution <- evaluate_beta(
   metadata
 )
 wu.evalution$PCo1.rate
-```
-
-    ## [1] 0.1474114
-
-``` r
 wu.evalution$PCo2.rate
-```
-
-    ## [1] 0.08727701
-
-``` r
 wu.evalution$PCoA.valid
-```
-
-    ## [1] FALSE
-
-``` r
 wu.evalution$pseudo_F
-```
-
-    ## [1] 0.9864256
-
-``` r
 wu.evalution$pseudo_R2
-```
-
-    ## [1] 0.07595821
-
-``` r
 wu.evalution$permanova_p
-```
-
-    ## [1] 0.5115115
-
-``` r
 wu.evalution$MiRKAT_R2
 ```
 
-    ## [1] 0.01034452
 
-``` r
+
+```{r}
 # ---- Remedies -----------------------------------------------------------
 # Higham projection
 wu.higham           <- remedy_gram(wu_matrix, method = "Higham")
@@ -180,58 +119,20 @@ wu.higham.evalution <- evaluate_beta_gram(
   metadata
 )
 wu.higham.evalution$PCo1.rate
-```
-
-    ## [1] 0.1671499
-
-``` r
 wu.higham.evalution$PCo2.rate
-```
-
-    ## [1] 0.09896342
-
-``` r
 wu.higham.evalution$PCoA.valid
-```
-
-    ## [1] TRUE
-
-``` r
 wu.higham.evalution$pseudo_F
-```
-
-    ## [1] 1.113382
-
-``` r
 wu.higham.evalution$pseudo_R2
-```
-
-    ## [1] 0.08490423
-
-``` r
 wu.higham.evalution$permanova_p
-```
-
-    ## [1] 0.2092092
-
-``` r
 wu.higham.evalution$MiRKAT_R2
 ```
 
-    ## [1] 0.01202306
-
-``` r
+```{r}
 wu.higham.euclidean <- euclidean_check(wu.higham)
 wu.higham.euclidean
 ```
 
-    ## $FNI
-    ## [1] 0
-    ## 
-    ## $is.Euclidean
-    ## [1] 1
-
-``` r
+```{r}
 # Tikhonov ridge (ε = 0)
 wu.tik           <- remedy_gram(wu_matrix, method = "Tikhonov", epsilon = 0)
 wu.tik.evalution <- evaluate_beta_gram(
@@ -241,58 +142,21 @@ wu.tik.evalution <- evaluate_beta_gram(
   metadata
 )
 wu.tik.evalution$PCo1.rate
-```
-
-    ## [1] 0.01749814
-
-``` r
 wu.tik.evalution$PCo2.rate
-```
-
-    ## [1] 0.01244613
-
-``` r
 wu.tik.evalution$PCoA.valid
-```
-
-    ## [1] TRUE
-
-``` r
 wu.tik.evalution$pseudo_F
-```
-
-    ## [1] 1.069095
-
-``` r
 wu.tik.evalution$pseudo_R2
-```
-
-    ## [1] 0.08180331
-
-``` r
 wu.tik.evalution$permanova_p
-```
-
-    ## [1] 0.3693694
-
-``` r
 wu.tik.evalution$MiRKAT_R2
 ```
 
-    ## [1] 0.005982887
-
-``` r
+```{r}
 wu.tik.euclidean <- euclidean_check(wu.tik)
 wu.tik.euclidean
 ```
 
-    ## $FNI
-    ## [1] 0
-    ## 
-    ## $is.Euclidean
-    ## [1] 1
 
-``` r
+```{r}
 # ---- Quick comparison table --------------------------------------------
 data.frame(
   Matrix      = c("Raw", "Higham", "Tikhonov"),
@@ -308,7 +172,3 @@ data.frame(
 )
 ```
 
-    ##     Matrix Euclidean  Pseudo_R2 PERM_pval
-    ## 1      Raw         0 0.07595821 0.5115115
-    ## 2   Higham         1 0.08490423 0.2092092
-    ## 3 Tikhonov         1 0.08180331 0.3693694
