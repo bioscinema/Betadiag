@@ -61,3 +61,17 @@ wu.higham.euclidean <- euclidean_check(wu.higham)
 wu.tik <- remedy_gram(wu_matrix, method = "Tikhonov",epsilon = 0)
 wu.tik.evalution <- evaluate_beta_gram(wu.tik, as.data.frame(metadata[,1]), as.data.frame(metadata[,-1]),metadata)
 wu.tik.euclidean <- euclidean_check(wu.tik)
+
+# ---- Quick comparison table --------------------------------------------
+data.frame(
+  Matrix      = c("Raw", "Higham", "Tikhonov"),
+  Euclidean   = c(wu.check$is.Euclidean,
+                  wu.higham.euclidean$is.Euclidean,
+                  wu.tik.euclidean$is.Euclidean),
+  Pseudo_R2   = c(wu.evalution$pseudo_R2,
+                  wu.higham.evalution$pseudo_R2,
+                  wu.tik.evalution$pseudo_R2),
+  PERM_pval   = c(wu.evalution$permanova_p,
+                  wu.higham.evalution$permanova_p,
+                  wu.tik.evalution$permanova_p)
+)
