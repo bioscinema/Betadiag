@@ -24,7 +24,7 @@ check_distance <- function(D) {
     is.Euclidean = euclidean_res$is.Euclidean,
     collinearity.score = triangle_res$collinearity.score,
     nonlinearity.score = triangle_res$nonlinearity.score,
-    FNI = euclidean_res$rate
+    FNI = euclidean_res$FNI
   ))
 }
 
@@ -79,5 +79,5 @@ euclidean_check <- function(G) {
   total_sum <- sum(abs(lambda))
   ratio <- neg_sum / total_sum
   
-  return(list(rate = ratio, is.Euclidean = ifelse(ratio > 0, 0, 1)))
+  return(list(FNI = ratio, is.Euclidean = ifelse(ratio > 0, 0, 1)))
 }
