@@ -73,5 +73,7 @@ wu.higham <- remedy_gram(wu_matrix, method = "Higham")
 wu.higham.evalution <- evaluate_beta(wu.higham, as.data.frame(metadata[,1]), as.data.frame(metadata[,-1]),metadata)
 
 
-
+# method 2: Tikhonov
+wu.tik <- remedy_gram(wu_matrix, method = "Tikhonov",epsilon = 0)
+wu.tik.evalution <- evaluate_beta(wu.tik, as.data.frame(metadata[,1]), as.data.frame(metadata[,-1]),metadata)
 
