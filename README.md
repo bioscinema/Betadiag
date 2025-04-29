@@ -18,23 +18,14 @@ To install the development version of Betadiag from GitHub:
 # install.packages("devtools")
 library(devtools)
 devtools::install_github("bioscinema/Betadiag")
-```
-
-    ## 
-    ## ── R CMD build ─────────────────────────────────────────────────────────────────
-    ##      checking for file ‘/private/var/folders/nt/5pd9877s5lx6vwzd5f15jz7r0000gn/T/Rtmp9B6qSw/remotes32f743ff328/bioscinema-Betadiag-7420ec0/DESCRIPTION’ ...  ✔  checking for file ‘/private/var/folders/nt/5pd9877s5lx6vwzd5f15jz7r0000gn/T/Rtmp9B6qSw/remotes32f743ff328/bioscinema-Betadiag-7420ec0/DESCRIPTION’
-    ##   ─  preparing ‘Betadiag’:
-    ##      checking DESCRIPTION meta-information ...  ✔  checking DESCRIPTION meta-information
-    ##   ─  checking for LF line-endings in source and make files and shell scripts
-    ##   ─  checking for empty or unneeded directories
-    ##    Omitted ‘LazyData’ from DESCRIPTION
-    ##   ─  building ‘Betadiag_0.0.1.tar.gz’
-    ##      
-    ## 
-
-``` r
 library(Betadiag)
 ```
+
+You can also use **Betadiag** through our [web-based Shiny
+app](https://yiqianzhang.shinyapps.io/Betadiag/).  
+Simply upload or paste your distance matrix and metadata to run
+diagnostics directly in your browser — no installation needed, and no
+data is saved.
 
 ## Key Features
 
@@ -59,7 +50,7 @@ devtools::install_github("bioscinema/Betadiag")
 
     ## Using GitHub PAT from the git credential store.
 
-    ## Skipping install of 'Betadiag' from a github remote, the SHA1 (7420ec02) has not changed since last install.
+    ## Skipping install of 'Betadiag' from a github remote, the SHA1 (bf9bbd2c) has not changed since last install.
     ##   Use `force = TRUE` to force installation
 
 ``` r
@@ -179,7 +170,7 @@ wu.evalution$pseudo_R2
 wu.evalution$permanova_p
 ```
 
-    ## [1] 0.5005005
+    ## [1] 0.4884885
 
 ``` r
 wu.evalution$MiRKAT_R2
@@ -230,7 +221,7 @@ wu.higham.evalution$pseudo_R2
 wu.higham.evalution$permanova_p
 ```
 
-    ## [1] 0.1851852
+    ## [1] 0.2072072
 
 ``` r
 wu.higham.evalution$MiRKAT_R2
@@ -291,7 +282,7 @@ wu.tik.evalution$pseudo_R2
 wu.tik.evalution$permanova_p
 ```
 
-    ## [1] 0.3713714
+    ## [1] 0.3753754
 
 ``` r
 wu.tik.evalution$MiRKAT_R2
@@ -327,6 +318,6 @@ data.frame(
 ```
 
     ##     Matrix Euclidean  Pseudo_R2 PERM_pval
-    ## 1      Raw         0 0.07595821 0.5005005
-    ## 2   Higham         1 0.08490423 0.1851852
-    ## 3 Tikhonov         1 0.08180331 0.3713714
+    ## 1      Raw         0 0.07595821 0.4884885
+    ## 2   Higham         1 0.08490423 0.2072072
+    ## 3 Tikhonov         1 0.08180331 0.3753754

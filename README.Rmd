@@ -20,6 +20,10 @@ devtools::install_github("bioscinema/Betadiag")
 library(Betadiag)
 ```
 
+You can also use **Betadiag** through our [web-based Shiny app](https://yiqianzhang.shinyapps.io/Betadiag/).  
+Simply upload or paste your distance matrix and metadata to run diagnostics directly in your browser — no installation needed, and no data is saved.
+
+
 ## Key Features
 
 - Check whether dissimilarity matrices are metric and Euclidean
